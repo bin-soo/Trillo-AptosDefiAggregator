@@ -11,6 +11,7 @@ export type SwapInfo = {
   expectedOutput: string;
   protocol: string;
   priceImpact: string;
+  dexUrl: string;
 };
 
 export type LendingInfo = {
@@ -19,6 +20,8 @@ export type LendingInfo = {
   apy: string;
   totalSupply: string;
   totalBorrowed: string;
+  poolUrl: string;
+  updated: string;
 };
 
 export type DeFiAction = {
