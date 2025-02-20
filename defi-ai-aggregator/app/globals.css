@@ -1,0 +1,30 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --foreground-rgb: 0, 0, 0;
+  --background-rgb: 255, 255, 255;
+}
+
+body {
+  color: rgb(var(--foreground-rgb));
+  background: rgb(var(--background-rgb));
+}
+
+/* Add custom styles here */
+.chat-container {
+  @apply flex-1 overflow-y-auto;
+}
+
+.message-bubble {
+  @apply rounded-lg px-4 py-2 max-w-[80%] shadow-sm;
+}
+
+.assistant-message {
+  @apply bg-white text-gray-900 border border-gray-200;
+}
+
+.user-message {
+  @apply bg-blue-600 text-white;
+}
