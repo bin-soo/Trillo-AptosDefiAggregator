@@ -23,6 +23,12 @@ const config: Config = {
           800: '#075985',
           900: '#0c4a6e',
         },
+        aptos: {
+          blue: '#2DD8F5',
+          purple: '#8B5CF6',
+          'light-blue': '#E5F9FD',
+          'light-purple': '#EDE9FE',
+        },
       },
       animation: {
         'gradient': 'gradient 8s linear infinite',
@@ -38,6 +44,10 @@ const config: Config = {
             'background-position': 'right center',
           },
         },
+      },
+      backgroundImage: {
+        'gradient-aptos': 'linear-gradient(to right, #2DD8F5, #8B5CF6)',
+        'gradient-aptos-light': 'linear-gradient(to right, #E5F9FD, #EDE9FE)',
       },
     },
   },

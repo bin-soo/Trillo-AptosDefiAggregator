@@ -1,4 +1,4 @@
-import { FormEvent } from 'react';
+import { FormEvent, KeyboardEvent } from 'react';
 
 interface ChatInputProps {
   input: string;
@@ -13,6 +13,16 @@ export default function ChatInput({
   handleSubmit,
   isConnected
 }: ChatInputProps) {
+  // Handle Enter key (but allow Shift+Enter for new lines)
+  const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      if (input.trim()) {
+        handleSubmit(new Event('submit') as any);
+      }
+    }
+  };
+
   return (
     <form onSubmit={handleSubmit} className="flex space-x-4">
       <textarea
@@ -21,6 +31,7 @@ export default function ChatInput({
           resize-none bg-white/50 backdrop-blur-sm transition-all"
         value={input}
         onChange={handleInputChange}
+        onKeyDown={handleKeyDown}
         placeholder={
           isConnected
             ? "Ask about DeFi (e.g., 'What's the best USDC lending rate?')"

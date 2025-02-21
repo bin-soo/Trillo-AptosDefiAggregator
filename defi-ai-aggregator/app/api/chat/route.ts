@@ -2,6 +2,7 @@ import { StreamingTextResponse } from 'ai';
 import { OpenAIStream } from 'ai';
 import { Configuration, OpenAIApi } from 'openai-edge';
 import defiService from '@/services/defiService';
+import { LendingInfo, SwapInfo } from '@/types/defi';
 
 const config = new Configuration({
   apiKey: process.env.OPENAI_API_KEY,
@@ -27,6 +28,18 @@ function validateAPY(apy: string): number {
   const apyNum = parseFloat(apy);
   // Cap unrealistic APY rates at 1000%
   return apyNum > 1000 ? 1000 : apyNum;
+}
+
+function formatSwapResponse(swapInfo: SwapInfo, timestamp: string): string {
+  return `💱 Best Swap Rate for ${swapInfo.tokenIn.symbol} to ${swapInfo.tokenOut.symbol} (${timestamp}):
+
+🔄 Rate: 1 ${swapInfo.tokenIn.symbol} = ${swapInfo.expectedOutput} ${swapInfo.tokenOut.symbol}
+📊 Protocol: ${swapInfo.protocol}
+📈 Price Impact: ${swapInfo.priceImpact}%
+
+🔗 Execute trade: ${swapInfo.dexUrl}
+
+Note: Rates are subject to change • DYOR`;
 }
 
 function formatLendingRatesResponse(rates: LendingInfo[], token: string, timestamp: string): string {
@@ -70,10 +83,53 @@ function formatLendingRatesResponse(rates: LendingInfo[], token: string, timesta
   return response;
 }
 
+function formatAllLendingRates(rates: LendingInfo[], token: string, timestamp: string): string {
+  // ... existing all rates formatter ...
+}
+
 export async function POST(req: Request) {
   const { messages } = await req.json();
   const lastMessage = messages[messages.length - 1].content.toLowerCase();
 
+  // Handle swap rate queries
+  if (lastMessage.includes('swap') || lastMessage.includes('exchange rate')) {
+    try {
+      // Extract tokens from the query
+      const tokenPairs = {
+        'apt': 'USDC',
+        'usdc': 'APT',
+        // Add more token pairs as needed
+      };
+
+      let tokenIn = '', tokenOut = '';
+      for (const [key, value] of Object.entries(tokenPairs)) {
+        if (lastMessage.includes(key.toLowerCase())) {
+          tokenIn = key.toUpperCase();
+          tokenOut = value;
+          break;
+        }
+      }
+
+      if (tokenIn && tokenOut) {
+        const swapInfo = await defiService.getBestSwapRoute(tokenIn, tokenOut, '1');
+        const timestamp = getFormattedTimestamp();
+        const swapMessage = formatSwapResponse(swapInfo, timestamp);
+
+        return new StreamingTextResponse(
+          new ReadableStream({
+            start(controller) {
+              controller.enqueue(new TextEncoder().encode(swapMessage));
+              controller.close();
+            },
+          })
+        );
+      }
+    } catch (error) {
+      console.error('Error fetching swap rates:', error);
+    }
+  }
+
+  // Handle lending rate queries
   if (lastMessage.includes('lending rate') || lastMessage.includes('apy')) {
     const token = lastMessage.includes('usdc') ? 'USDC' : 
                   lastMessage.includes('apt') ? 'APT' :
@@ -141,8 +197,8 @@ export async function POST(req: Request) {
         role: 'system',
         content: `You are a DeFi assistant for Aptos blockchain. When users ask about:
           - Lending rates: Suggest "show lending rates for [token]"
+          - Swaps: Suggest "What's the best rate to swap [tokenA] to [tokenB]?"
           - Protocols: List available Aptos DeFi protocols
-          - Swaps: Explain available DEXes
           Keep responses focused on Aptos DeFi ecosystem.
           Don't say you can't access real-time data.`
       },
