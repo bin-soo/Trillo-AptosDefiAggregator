@@ -1,5 +1,18 @@
-import axios from 'axios';
+import axios, { AxiosError } from 'axios';
 import { SwapInfo, LendingInfo } from '../types/defi';
+
+interface Pool {
+  chain: string;
+  project: string;
+  symbol: string;
+  tvlUsd: number;
+  apy: number;
+  apyBase?: number;
+  apyReward?: number;
+  rewardTokens?: string[];
+  pool: string;
+  utilization?: number;
+}
 
 export class DeFiService {
   private static instance: DeFiService;
@@ -8,7 +21,7 @@ export class DeFiService {
   
   // Constants for validation
   private readonly MAX_REALISTIC_APY = 100; // 100% APY cap
-  private readonly MIN_TVL = 10000; // Lower TVL threshold to catch more pools
+  private readonly MIN_TVL = 1000; // Lower threshold to catch more pools
   private readonly STABLE_TOKENS = ['USDC', 'USDT', 'DAI'];
 
   // Known Aptos lending protocols
@@ -33,87 +46,49 @@ export class DeFiService {
 
   async getLendingRates(token: string): Promise<LendingInfo[]> {
     try {
-      // Get pools with chain filter
-      const poolsResponse = await axios.get(this.DEFI_LLAMA_POOLS, {
-        params: {
-          chain: 'Aptos'
-        }
-      });
+      // Get all pools from DefiLlama
+      const response = await axios.get<{ data: Pool[] }>(this.DEFI_LLAMA_POOLS);
+      
+      // Filter for Aptos pools
+      const aptosPools = response.data.data.filter((pool) => 
+        pool.chain.toLowerCase() === 'aptos' &&
+        pool.symbol.toUpperCase().includes(token.toUpperCase()) &&
+        pool.tvlUsd >= this.MIN_TVL
+      );
 
-      console.log('Raw pools response:', poolsResponse.data.data.slice(0, 2));
+      console.log(`Found ${aptosPools.length} Aptos pools for ${token}`);
 
-      // Filter pools more precisely
-      const relevantPools = poolsResponse.data.data.filter((pool: any) => {
-        // Basic relevance checks
-        const projectName = pool.project.toLowerCase();
-        const isLendingProtocol = this.LENDING_PROTOCOLS.some(protocol => 
-          projectName.includes(protocol.toLowerCase()));
-        
-        const isRelevantPool = 
-          isLendingProtocol && // Is a known lending protocol
-          pool.symbol.toUpperCase().includes(token.toUpperCase()) && // Matches token
-          pool.tvlUsd >= this.MIN_TVL && // Has significant TVL
-          pool.apy > 0; // Has positive yield
-
-        if (!isRelevantPool) {
-          console.log('Filtered out pool:', {
-            project: pool.project,
-            symbol: pool.symbol,
-            isLendingProtocol,
-            tvl: pool.tvlUsd,
-            apy: pool.apy
-          });
-          return false;
-        }
-
-        // Additional validation for realistic rates
-        const apy = parseFloat(pool.apy);
-        const isStablePair = this.STABLE_TOKENS.some(stable => 
-          pool.symbol.toUpperCase().includes(stable));
-
-        // More stringent APY validation for stable pairs
-        const isRealisticAPY = isStablePair ? 
-          apy <= 20 : // 20% cap for stable pairs
-          apy <= this.MAX_REALISTIC_APY; // 100% cap for other pairs
-
-        if (isRelevantPool && isRealisticAPY) {
-          console.log('Found valid lending pool:', {
-            protocol: pool.project,
-            symbol: pool.symbol,
-            apy: apy.toFixed(2) + '%',
-            tvl: '$' + pool.tvlUsd.toLocaleString(),
-            isStablePair
-          });
-        }
-
-        return isRelevantPool && isRealisticAPY;
-      });
-
-      // Sort by TVL to prioritize more liquid pools
-      return relevantPools
+      // Map pools to our format with proper typing
+      const mappedPools = aptosPools
         .sort((a, b) => b.tvlUsd - a.tvlUsd)
-        .map((pool: any) => ({
-          token: {
-            symbol: pool.symbol,
-            address: pool.pool,
-            decimals: 8
-          },
-          protocol: pool.project,
-          apy: parseFloat(pool.apy).toFixed(2),
-          totalSupply: pool.tvlUsd.toString(),
-          totalBorrowed: (pool.tvlUsd * (pool.utilization || 0.7)).toString(),
-          poolUrl: `https://defillama.com/protocol/${pool.project.toLowerCase()}/aptos`,
-          updated: new Date().toISOString(),
-          stablePair: this.STABLE_TOKENS.some(stable => 
-            pool.symbol.toUpperCase().includes(stable)),
-          rewardTokens: pool.rewardTokens || []
-        }));
+        .map((pool) => {
+          const totalApy = (pool.apyBase || 0) + (pool.apyReward || 0);
+          
+          return {
+            token: {
+              symbol: pool.symbol,
+              address: pool.pool,
+              decimals: 8
+            },
+            protocol: pool.project,
+            apy: totalApy.toFixed(2),
+            totalSupply: pool.tvlUsd.toString(),
+            totalBorrowed: (pool.tvlUsd * (pool.utilization || 0.7)).toString(),
+            poolUrl: `https://defillama.com/protocol/${pool.project.toLowerCase()}/aptos`,
+            updated: new Date().toISOString(),
+            rewardTokens: pool.rewardTokens || []
+          };
+        });
+
+      console.log('Processed pools:', mappedPools);
+      return mappedPools;
 
     } catch (error) {
+      const axiosError = error as AxiosError;
       console.error('DeFiLlama API Error:', {
-        message: error.message,
-        status: error.response?.status,
-        data: error.response?.data
+        message: axiosError.message,
+        status: axiosError.response?.status,
+        data: axiosError.response?.data
       });
       return [];
     }
