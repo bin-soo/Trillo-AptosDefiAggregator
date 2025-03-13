@@ -11,6 +11,7 @@ import { Bars3Icon } from '@heroicons/react/24/outline';
 import FloatingSuggestions from '@/components/FloatingSuggestions';
 import { APTOS_COLORS, APTOS_BRAND } from '@/constants/brand';
 import AptosLogo from '@/components/AptosLogo';
+import Link from 'next/link';
 
 export default function Home() {
   const { messages, input, handleInputChange, handleSubmit, setInput } = useChat();
@@ -67,7 +68,17 @@ export default function Home() {
             <h1 className="text-2xl font-bold bg-gradient-aptos bg-clip-text text-transparent">
               {APTOS_BRAND.name}
             </h1>
-            <WalletConnect onConnect={() => setIsConnected(true)} />
+            <div className="flex items-center space-x-4">
+              <nav className="hidden md:flex space-x-4">
+                <Link href="/" className="text-gray-700 hover:text-blue-600 px-3 py-2 rounded-md text-sm font-medium">
+                  Home
+                </Link>
+                <Link href="/swap" className="text-gray-700 hover:text-blue-600 px-3 py-2 rounded-md text-sm font-medium">
+                  AI Swap
+                </Link>
+              </nav>
+              <WalletConnect onConnect={() => setIsConnected(true)} />
+            </div>
           </div>
         </header>
 
@@ -83,6 +94,14 @@ export default function Home() {
                   Your AI-powered guide to the Aptos DeFi ecosystem. Get real-time lending rates,
                   compare protocols, and discover the best opportunities.
                 </p>
+                <div className="mb-8">
+                  <Link 
+                    href="/swap" 
+                    className="inline-flex items-center px-6 py-3 border border-transparent text-base font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                  >
+                    Try AI-Powered Swap
+                  </Link>
+                </div>
                 <QuickActions onActionClick={handleQuickAction} />
               </div>
             ) : (

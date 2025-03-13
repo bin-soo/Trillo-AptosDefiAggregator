@@ -249,9 +249,25 @@ export async function POST(req: Request) {
     try {
       console.log('Extracted swap params:', swapParams);
       
+      // Validate token symbols to ensure they're supported
+      const validTokens = ['APT', 'USDC', 'USDT', 'DAI'];
+      if (!validTokens.includes(swapParams.tokenIn) || !validTokens.includes(swapParams.tokenOut)) {
+        return new StreamingTextResponse(
+          new ReadableStream({
+            start(controller) {
+              controller.enqueue(new TextEncoder().encode(
+                `Sorry, I can only provide swap rates for APT, USDC, USDT, and DAI at the moment. ` +
+                `Please try with these tokens.`
+              ));
+              controller.close();
+            },
+          })
+        );
+      }
+      
       const route = await defiService.getBestSwapRoute(
-        swapParams.tokenIn,
-        swapParams.tokenOut,
+        swapParams.tokenIn as any,
+        swapParams.tokenOut as any,
         swapParams.amount
       );
       

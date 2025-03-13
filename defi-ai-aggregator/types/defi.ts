@@ -4,24 +4,37 @@ export type TokenInfo = {
   decimals: number;
 };
 
-export type SwapRoute = {
-  tokenIn: TokenInfo;
-  tokenOut: TokenInfo;
-  amount: string;
+export interface SwapRoute {
+  fromToken: string;
+  toToken: string;
+  fromAmount: string;
   expectedOutput: string;
-  protocol: string;
-  priceImpact: string;
-  estimatedGas: string;
-  path: {
+  priceImpact: number;
+  estimatedGas: number;
+  dex: string;
+  protocol?: string;
+  alternativeRoutes?: AlternativeRoute[];
+  swapPayload?: any; // Transaction payload for the wallet to sign
+  // Additional properties for Panora integration
+  tokenIn?: {
+    symbol: string;
+    address: string;
+    decimals: number;
+  };
+  tokenOut?: {
+    symbol: string;
+    address: string;
+    decimals: number;
+  };
+  amount?: string;
+  path?: Array<{
     dex: string;
     tokenIn: string;
     tokenOut: string;
     fee: string;
-  }[];
-  dexUrl: string;
-  alternativeRoutes?: Omit<SwapRoute, 'alternativeRoutes' | 'swapPayload'>[];
-  swapPayload?: any;
-};
+  }>;
+  dexUrl?: string;
+}
 
 export type LendingInfo = {
   token: TokenInfo;
@@ -67,4 +80,18 @@ export type ChatMessage = {
   role: 'user' | 'assistant';
   content: string;
   action?: DeFiAction;
-}; 
+};
+
+export type TokenSymbol = 'APT' | 'USDC' | 'USDT' | 'DAI';
+
+export interface TokenPair {
+  fromToken: TokenSymbol;
+  toToken: TokenSymbol;
+}
+
+export interface AlternativeRoute {
+  protocol: string;
+  expectedOutput: string;
+  priceImpact: string;
+  estimatedGas: number;
+} 
