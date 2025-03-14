@@ -74,6 +74,8 @@ export type LiquidityPoolInfo = {
 export type DeFiAction = {
   type: 'swap' | 'lend' | 'borrow' | 'provide_liquidity' | 'yield_comparison';
   data: SwapRoute | LendingInfo | LiquidityPoolInfo;
+  actionable?: boolean;
+  actionText?: string;
 };
 
 export type ChatMessage = {

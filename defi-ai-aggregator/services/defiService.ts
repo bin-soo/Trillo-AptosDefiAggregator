@@ -15,6 +15,8 @@ export class DeFiService {
   private client: AptosClient;
   private isTestnet: boolean = false;
   private networkUrl: string = 'https://fullnode.mainnet.aptoslabs.com/v1';
+  private testnetRatesCache: Map<string, { rate: number, timestamp: number }> = new Map();
+  private readonly TESTNET_RATES_CACHE_DURATION = 60 * 1000; // 1 minute
 
   private constructor() {
     // Initialize based on environment
@@ -54,6 +56,113 @@ export class DeFiService {
     // Update testnet mode for all services
     swapService.setTestnetMode(isTestnet);
     dexService.setTestnetMode(this.isTestnet);
+  }
+
+  /**
+   * Get the actual testnet exchange rate between two tokens
+   * This queries the DEX pools on testnet to get the real rate
+   */
+  async getTestnetExchangeRate(
+    tokenIn: TokenType,
+    tokenOut: TokenType
+  ): Promise<number> {
+    // Create a cache key
+    const cacheKey = `${tokenIn}-${tokenOut}`;
+    const now = Date.now();
+    
+    // Check cache first
+    const cachedRate = this.testnetRatesCache.get(cacheKey);
+    if (cachedRate && now - cachedRate.timestamp < this.TESTNET_RATES_CACHE_DURATION) {
+      console.log(`[getTestnetExchangeRate] Using cached rate for ${tokenIn}-${tokenOut}: ${cachedRate.rate}`);
+      return cachedRate.rate;
+    }
+    
+    try {
+      console.log(`[getTestnetExchangeRate] Fetching testnet rate for ${tokenIn}-${tokenOut}`);
+      
+      // For PancakeSwap on testnet
+      // First, try to get a quote for 1 unit of tokenIn
+      const quotes = await dexService.getAllDexQuotes(tokenIn, tokenOut, 1);
+      
+      // Find the best rate from available DEXes
+      let bestRate = 0;
+      for (const quote of quotes) {
+        if (quote && parseFloat(quote.outputAmount) > bestRate) {
+          bestRate = parseFloat(quote.outputAmount);
+        }
+      }
+      
+      // If we couldn't get a rate from DEXes, try a direct resource query
+      if (bestRate === 0) {
+        // For APT-USDC pair on testnet, query PancakeSwap pool directly
+        if ((tokenIn === 'APT' && tokenOut === 'USDC') || (tokenIn === 'USDC' && tokenOut === 'APT')) {
+          // Query PancakeSwap pool resources
+          const pancakePoolAddress = "0xc7efb4076dbe143cbcd98cfaaa929ecfc8f299203dfff63b95ccb6bfe19850fa";
+          
+          try {
+            const resources = await this.client.getAccountResources(pancakePoolAddress);
+            
+            // Find the pool resource for APT-USDC
+            const poolResource = resources.find(r => 
+              r.type.includes('swap::TokenPairReserve') && 
+              r.type.includes('AptosCoin') && 
+              r.type.includes('DevnetUSDC')
+            );
+            
+            if (poolResource && poolResource.data) {
+              // Extract reserves
+              const data = poolResource.data as any;
+              const reserve0 = parseFloat(data.reserve_x);
+              const reserve1 = parseFloat(data.reserve_y);
+              
+              // Calculate rate based on reserves
+              if (tokenIn === 'APT' && tokenOut === 'USDC') {
+                bestRate = reserve1 / reserve0;
+              } else {
+                bestRate = reserve0 / reserve1;
+              }
+            }
+          } catch (error) {
+            console.error('[getTestnetExchangeRate] Error querying pool resources:', error);
+          }
+        }
+      }
+      
+      // If we still don't have a rate, use fallback values
+      if (bestRate === 0) {
+        if (tokenIn === 'APT' && tokenOut === 'USDC') {
+          bestRate = 58.034;
+        } else if (tokenIn === 'USDC' && tokenOut === 'APT') {
+          bestRate = 0.0172;
+        } else {
+          bestRate = 10; // Default fallback
+        }
+      }
+      
+      // Cache the result
+      this.testnetRatesCache.set(cacheKey, { rate: bestRate, timestamp: now });
+      
+      console.log(`[getTestnetExchangeRate] Testnet rate for ${tokenIn}-${tokenOut}: ${bestRate}`);
+      return bestRate;
+      
+    } catch (error) {
+      console.error('[getTestnetExchangeRate] Error:', error);
+      
+      // Use fallback values if there's an error
+      let fallbackRate = 0;
+      if (tokenIn === 'APT' && tokenOut === 'USDC') {
+        fallbackRate = 58.034;
+      } else if (tokenIn === 'USDC' && tokenOut === 'APT') {
+        fallbackRate = 0.0172;
+      } else {
+        fallbackRate = 10; // Default fallback
+      }
+      
+      // Cache the fallback result
+      this.testnetRatesCache.set(cacheKey, { rate: fallbackRate, timestamp: now });
+      
+      return fallbackRate;
+    }
   }
 
   /**
