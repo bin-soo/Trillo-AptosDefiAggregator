@@ -78,7 +78,7 @@ export default function SwapPage() {
       const aptPrice = data.market_data.current_price.usd;
       const aptChange24h = data.market_data.price_change_percentage_24h;
       const volume24h = data.market_data.total_volume.usd;
-      
+      console.log('Market data:', { aptPrice, aptChange24h, volume24h });
       setMarketData({
         aptPrice,
         aptChange24h,

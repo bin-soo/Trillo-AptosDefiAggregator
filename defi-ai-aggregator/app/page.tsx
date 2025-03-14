@@ -7,7 +7,7 @@ import ChatInput from '@/components/ChatInput';
 import WalletConnect from '@/components/WalletConnect';
 import Sidebar from '@/components/Sidebar';
 import QuickActions from '@/components/QuickActions';
-import { Bars3Icon, ArrowPathIcon } from '@heroicons/react/24/outline';
+import { Bars3Icon, ArrowPathIcon, ChartBarIcon, ChatBubbleLeftRightIcon } from '@heroicons/react/24/outline';
 import FloatingSuggestions from '@/components/FloatingSuggestions';
 import { APTOS_COLORS, APTOS_BRAND } from '@/constants/brand';
 import AptosLogo from '@/components/AptosLogo';
@@ -16,192 +16,156 @@ import { useWallet } from '@aptos-labs/wallet-adapter-react';
 import { useNetwork } from './providers';
 import { SwapRoute, DeFiAction } from '@/types/defi';
 import defiService from '@/services/defiService';
+import MarketDashboard from '@/components/MarketDashboard';
+import MarketAnalysis from '@/components/MarketAnalysis';
 
 export default function Home() {
   const { messages, input, handleInputChange, handleSubmit, setInput, setMessages } = useChat();
-  const [isConnected, setIsConnected] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-  const [chatHistory, setChatHistory] = useState<any[]>([]);
-  const { connected, account } = useWallet();
-  const { isTestnet, setNetwork } = useNetwork();
+  const [chatHistory, setChatHistory] = useState<Array<{ id: string; question: string; timestamp: Date }>>([]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const { connected, account } = useWallet();
+  const { network, setNetwork, isTestnet } = useNetwork();
+  const [activeView, setActiveView] = useState<'chat' | 'dashboard'>('dashboard'); // Default to dashboard view
 
-  // Set up DeFi service
+  // Scroll to bottom of messages
   useEffect(() => {
-    defiService.setTestnetMode(isTestnet);
-  }, [isTestnet]);
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages]);
 
+  // Update chat history when new user message is added
   useEffect(() => {
-    // Update chat history when messages change
-    const userMessages = messages
-      .filter(m => m.role === 'user')
-      .map(m => ({
-        id: Math.random().toString(36).substr(2, 9),
-        question: m.content,
+    const userMessages = messages.filter(msg => msg.role === 'user');
+    if (userMessages.length > 0) {
+      const lastUserMessage = userMessages[userMessages.length - 1];
+      setChatHistory(prev => [
+        ...prev,
+        {
+          id: lastUserMessage.id,
+          question: lastUserMessage.content,
         timestamp: new Date()
-      }));
-    setChatHistory(userMessages);
-    
-    // Scroll to bottom when messages change
-    if (messagesEndRef.current) {
-      messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
+        }
+      ]);
     }
   }, [messages]);
 
-  // Update connection status when wallet connection changes
-  useEffect(() => {
-    setIsConnected(connected);
-  }, [connected]);
+  // Toggle sidebar
+  const toggleSidebar = () => {
+    setIsSidebarOpen(!isSidebarOpen);
+  };
 
-  // Function to toggle between testnet and mainnet
+  // Toggle network between mainnet and testnet
   const toggleNetwork = () => {
-    const newNetwork = isTestnet ? 'mainnet' : 'testnet';
+    const newNetwork = network === 'mainnet' ? 'testnet' : 'mainnet';
     setNetwork(newNetwork);
     
-    // Add a system message about network change
-    setMessages([
-      ...messages,
+    // Update the defiService with the new network setting
+    defiService.setTestnetMode(newNetwork === 'testnet');
+    
+    // Add a system message about the network change
+    setMessages(prev => [
+      ...prev,
       {
         id: Date.now().toString(),
         role: 'assistant',
-        content: `Network changed to ${newNetwork.toUpperCase()}. 
-        
-${newNetwork === 'testnet' 
-  ? '⚠️ You are now on Testnet. Token prices and swap rates will differ from real-world values.' 
-  : '🔒 You are now on Mainnet. Real-world token prices and swap rates will apply.'}`
+        content: `Network switched to ${newNetwork}. All operations will now use ${newNetwork} data and connections.`
       }
     ]);
   };
 
-  // Function to detect swap intent in user message
+  // Handle clicking on a chat history item
+  const handleHistoryClick = (question: string) => {
+    setInput(question);
+    setIsSidebarOpen(false);
+  };
+
+  // Detect swap intent in user message
   const detectSwapIntent = async (message: string) => {
-    // Match patterns like "swap 5 APT to USDC" or "exchange 10 USDC for APT"
-    const swapMatch = message.match(/(?:swap|exchange|trade|convert)\s+(\d+(?:\.\d+)?)\s+(\w+)\s+(?:to|for|into)\s+(\w+)/i);
-    if (swapMatch) {
-      const [_, amount, tokenIn, tokenOut] = swapMatch;
-      return {
-        amount,
-        tokenIn: tokenIn.toUpperCase(),
-        tokenOut: tokenOut.toUpperCase()
-      };
+    const swapRegex = /swap\s+(\d+(?:\.\d+)?)\s+(\w+)\s+(?:to|for)\s+(\w+)/i;
+    const match = message.match(swapRegex);
+    
+    if (match) {
+      const [_, amount, tokenIn, tokenOut] = match;
+      console.log(`Detected swap intent: ${amount} ${tokenIn} to ${tokenOut}`);
+      return { amount, tokenIn, tokenOut };
     }
     
-    // Match patterns like "I want to swap 2 APT for USDC" or "I need to exchange 5 USDC to APT"
-    const intentMatch = message.match(/(?:want|need|like|can you|could you|please|help me)\s+(?:to\s+)?(?:swap|exchange|trade|convert)\s+(\d+(?:\.\d+)?)\s+(\w+)\s+(?:to|for|into)\s+(\w+)/i);
-    if (intentMatch) {
-      const [_, amount, tokenIn, tokenOut] = intentMatch;
-      return {
-        amount,
-        tokenIn: tokenIn.toUpperCase(),
-        tokenOut: tokenOut.toUpperCase()
-      };
-    }
+    // Try more flexible pattern matching
+    const tokenRegex = /(\w+)\s+(?:to|for)\s+(\w+)/i;
+    const amountRegex = /(\d+(?:\.\d+)?)\s+(\w+)/i;
     
-    // Match patterns like "What's the best rate for swapping 1 APT to USDC?"
-    const rateMatch = message.match(/(?:rate|price|value|worth).*(?:swap|exchang|trad|convert).*?(\d+(?:\.\d+)?)\s+(\w+)\s+(?:to|for|into)\s+(\w+)/i);
-    if (rateMatch) {
-      const [_, amount, tokenIn, tokenOut] = rateMatch;
-      return {
-        amount,
-        tokenIn: tokenIn.toUpperCase(),
-        tokenOut: tokenOut.toUpperCase()
-      };
+    const tokenMatch = message.match(tokenRegex);
+    const amountMatch = message.match(amountRegex);
+    
+    if (tokenMatch && amountMatch && message.toLowerCase().includes('swap')) {
+      const [_, tokenInFromAmount, tokenInFromToken] = amountMatch;
+      const [__, tokenInFromPair, tokenOutFromPair] = tokenMatch;
+      
+      // Determine which token is which
+      let finalTokenIn, finalTokenOut, finalAmount;
+      
+      if (tokenInFromToken.toUpperCase() === tokenInFromPair.toUpperCase()) {
+        finalTokenIn = tokenInFromToken.toUpperCase();
+        finalTokenOut = tokenOutFromPair.toUpperCase();
+        finalAmount = tokenInFromAmount;
+      } else {
+        finalTokenIn = tokenInFromPair.toUpperCase();
+        finalTokenOut = tokenOutFromPair.toUpperCase();
+        finalAmount = tokenInFromAmount;
+      }
+      
+      console.log(`Detected flexible swap intent: ${finalAmount} ${finalTokenIn} to ${finalTokenOut}`);
+      return { amount: finalAmount, tokenIn: finalTokenIn, tokenOut: finalTokenOut };
     }
     
     return null;
   };
 
-  // Handle swap intent directly in the client
+  // Handle swap intent
   const handleSwapIntent = async (userMessage: string) => {
     const swapParams = await detectSwapIntent(userMessage);
     
-    if (swapParams && connected) {
+    if (swapParams) {
       const { amount, tokenIn, tokenOut } = swapParams;
       
-      // Add a temporary message from the assistant
+      // Add a temporary message while fetching the swap route
       const tempMessageId = Date.now().toString();
-      setMessages([
-        ...messages,
+      setMessages(prev => [
+        ...prev,
         {
           id: tempMessageId,
           role: 'assistant',
-          content: `I'm analyzing the market for swapping ${amount} ${tokenIn} to ${tokenOut}...`,
+          content: `Looking for the best swap route for ${amount} ${tokenIn} to ${tokenOut}...`
         }
       ]);
       
       try {
-        // Get token prices for market insights
-        const [tokenInPrice, tokenOutPrice] = await Promise.all([
-          defiService.getTokenPrice(tokenIn),
-          defiService.getTokenPrice(tokenOut)
-        ]);
-        
         // Get the best swap route
-        const route = await defiService.getBestSwapRoute(
+        const swapRoute = await defiService.getBestSwapRoute(
           tokenIn as any,
           tokenOut as any,
           amount
         );
         
-        // Calculate market insights
-        const marketValue = parseFloat(amount) * tokenInPrice;
-        const expectedValue = parseFloat(route.expectedOutput) * tokenOutPrice;
-        const valueChange = ((expectedValue - marketValue) / marketValue) * 100;
-        const valueChangeText = valueChange > 0 ? `+${valueChange.toFixed(2)}%` : `${valueChange.toFixed(2)}%`;
-        
-        // Get alternative routes for comparison
-        const alternativeRoutesText = route.alternativeRoutes && route.alternativeRoutes.length > 0 
-          ? `\n\n**Alternative Routes:**\n${route.alternativeRoutes.map(alt => 
-              `• ${alt.protocol}: ${alt.expectedOutput} ${tokenOut} (${alt.priceImpact}% impact)`
-            ).join('\n')}`
-          : '';
-        
-        // Add testnet-specific information if we're on testnet
-        let testnetInfoText = '';
-        if (isTestnet) {
-          // Query the actual testnet rate
-          const testnetRate = await defiService.getTestnetExchangeRate(
-            tokenIn as any,
-            tokenOut as any
-          );
-          
-          const testnetExpectedOutput = (parseFloat(amount) * testnetRate).toFixed(6);
-          
-          testnetInfoText = `\n\n## ⚠️ Testnet Mode Detected
-
-**Note:** You are currently on Aptos Testnet where token prices differ from real-world values.
-
-**Testnet Expected Output:** ${testnetExpectedOutput} ${tokenOut}
-**Testnet Exchange Rate:** 1 ${tokenIn} ≈ ${testnetRate.toFixed(6)} ${tokenOut}
-
-The above market analysis is based on real-world prices for reference only. Your actual transaction on testnet will use testnet rates.`;
-        }
-        
-        // Format the response with market insights
-        const responseContent = `## Market Analysis for ${amount} ${tokenIn} to ${tokenOut}
-
-💰 **Current Market Value**: $${(marketValue).toFixed(2)} (${tokenIn}: $${tokenInPrice.toFixed(2)})
-💱 **Expected Output**: ${route.expectedOutput} ${tokenOut} ($${(expectedValue).toFixed(2)})
-📊 **Value Change**: ${valueChangeText}
-🔄 **Best DEX**: ${route.protocol || route.dex}
-📈 **Price Impact**: ${route.priceImpact.toString()}%
-⛽ **Estimated Gas**: ${route.estimatedGas} APT
-
-${alternativeRoutesText}
-
-${parseFloat(route.priceImpact.toString()) > 3 ? "⚠️ **Warning**: High price impact detected. Consider reducing your swap amount to minimize slippage." : ""}
-${valueChange < -2 ? "⚠️ **Note**: You're losing value in this swap. Consider waiting for better market conditions." : ""}
-${testnetInfoText}
-
-Would you like me to execute this swap for you? Click the "Execute Swap" button below or reply with "yes" to proceed.`;
+        console.log('Swap route:', swapRoute);
         
         // Create a swap action
         const swapAction: DeFiAction = {
           type: 'swap',
-          data: route,
+          data: swapRoute,
           actionable: true,
           actionText: 'Execute Swap'
         };
+        
+        // Format the response
+        const responseContent = `I found the best route to swap ${amount} ${tokenIn} to ${tokenOut}:
+        
+• Expected output: ${swapRoute.expectedOutput} ${tokenOut}
+• Best DEX: ${swapRoute.protocol || swapRoute.dex}
+• Price impact: ${swapRoute.priceImpact}%
+• Estimated gas: ${swapRoute.estimatedGas}
+
+Would you like me to execute this swap for you?`;
         
         // Update the temporary message with the actual response
         setMessages(messages => 
@@ -227,13 +191,14 @@ Would you like me to execute this swap for you? Click the "Execute Swap" button 
       return true; // Indicate that we handled the swap intent
     }
     
-    return false; // Indicate that we didn't handle the message
+    return false; // Indicate that this wasn't a swap intent
   };
 
   // Handle swap confirmation
   const handleSwapConfirmation = async (userMessage: string) => {
-    if (userMessage.toLowerCase().match(/^(yes|confirm|execute|proceed|swap it|do it|go ahead|sure|ok|okay)$/)) {
-      // Find the last swap action in the messages
+    const confirmationRegex = /yes|confirm|execute|proceed|go ahead|swap it|do it/i;
+    if (confirmationRegex.test(userMessage)) {
+      // Find the last swap action
       const lastSwapAction = [...messages]
         .reverse()
         .find(msg => msg.role === 'assistant' && msg.action?.type === 'swap');
@@ -243,33 +208,41 @@ Would you like me to execute this swap for you? Click the "Execute Swap" button 
         
         // Add a confirmation message
         const confirmationId = Date.now().toString();
-        setMessages([
-          ...messages,
+        setMessages(prev => [
+          ...prev,
           {
             id: confirmationId,
             role: 'assistant',
-            content: `I'll execute this swap for you. Please confirm the transaction in your wallet when prompted.
-
-I'll update you on the status once it's complete.`
+            content: `I'll execute the swap of ${route.fromAmount} ${route.fromToken} to ${route.toToken} for you now.`
           }
         ]);
         
-        // Execute the swap
+        // Check if wallet is connected
+        if (!connected || !account) {
+          setMessages(prev => [
+            ...prev,
+            {
+              id: Date.now().toString(),
+              role: 'assistant',
+              content: 'Please connect your wallet first to execute the swap.'
+            }
+          ]);
+          return true;
+        }
+        
         try {
-          if (!account) {
-            throw new Error('Wallet not connected');
-          }
-          
+          // Execute the swap
           const result = await defiService.executeSwap(
             account.address,
             route.fromToken as any,
             route.toToken as any,
             route.fromAmount,
-            0.5 // Default slippage
+            0.5, // Default slippage
+            20 * 60 // Default deadline (20 minutes)
           );
           
-          if (!result.success || !result.payload) {
-            throw new Error(result.error || 'Failed to prepare transaction');
+          if (!result.success) {
+            throw new Error(result.error || 'Failed to execute swap');
           }
           
           // Update with transaction pending message
@@ -302,12 +275,12 @@ Please try again or adjust your swap parameters.`
       }
     }
     
-    return false; // Indicate that we didn't handle the message
+    return false; // Indicate that this wasn't a confirmation
   };
 
-  // Function to detect portfolio analysis intent
+  // Detect portfolio analysis intent
   const detectPortfolioIntent = async (message: string) => {
-    const portfolioRegex = /(?:analyze|check|review|evaluate|assess|look at|examine|show|what('s| is) in|how('s| is)) my (?:portfolio|wallet|holdings|assets|tokens|coins|balance)/i;
+    const portfolioRegex = /portfolio|holdings|assets|balance|analyze my/i;
     return portfolioRegex.test(message);
   };
 
@@ -315,50 +288,54 @@ Please try again or adjust your swap parameters.`
   const handlePortfolioIntent = async (userMessage: string) => {
     const isPortfolioIntent = await detectPortfolioIntent(userMessage);
     
-    if (isPortfolioIntent && connected && account) {
-      // Add a temporary message from the assistant
+    if (isPortfolioIntent) {
+      // Check if wallet is connected
+      if (!connected || !account) {
+        setMessages(prev => [
+          ...prev,
+          {
+            id: Date.now().toString(),
+            role: 'assistant',
+            content: 'Please connect your wallet first so I can analyze your portfolio.'
+          }
+        ]);
+        return true;
+      }
+      
+      // Add a temporary message while analyzing the portfolio
       const tempMessageId = Date.now().toString();
-      setMessages([
-        ...messages,
+      setMessages(prev => [
+        ...prev,
         {
           id: tempMessageId,
           role: 'assistant',
-          content: `I'm analyzing your wallet holdings...`,
+          content: `Analyzing your portfolio at ${account.address}...`
         }
       ]);
       
       try {
-        // In a real implementation, you would fetch the user's token balances here
-        // For demo purposes, we'll simulate some holdings
-        const mockHoldings = [
-          { token: 'APT', balance: '10.5', value: 70.88 },
-          { token: 'USDC', balance: '25.0', value: 25.0 },
-          { token: 'USDT', balance: '15.0', value: 15.0 }
-        ];
+        // In a real implementation, you would fetch the user's portfolio data here
+        // For now, we'll simulate a portfolio analysis
         
-        const totalValue = mockHoldings.reduce((sum, holding) => sum + holding.value, 0);
+        // Simulate some delay for the analysis
+        await new Promise(resolve => setTimeout(resolve, 1500));
         
-        // Format the response with portfolio insights
-        const responseContent = `## Your Portfolio Analysis
+        // Format the response
+        const responseContent = `## Portfolio Analysis
 
-💼 **Total Portfolio Value**: $${totalValue.toFixed(2)}
+Based on your wallet at ${account.address.slice(0, 6)}...${account.address.slice(-4)}, here's my analysis:
 
-**Holdings:**
-${mockHoldings.map(holding => 
-  `• ${holding.balance} ${holding.token} ($${holding.value.toFixed(2)} - ${((holding.value / totalValue) * 100).toFixed(1)}% of portfolio)`
-).join('\n')}
+### Current Holdings
+• 10.5 APT ($63.00)
+• 120 USDC ($120.00)
+• 0.5 BTC ($25,000.00)
 
-**Insights:**
-• Your portfolio is ${mockHoldings[0].token}-heavy (${((mockHoldings[0].value / totalValue) * 100).toFixed(1)}% allocation)
-• Consider diversifying into more yield-generating assets
-• Current APT staking APY is around 3.5-4.2%
+### Recommendations
+• Your portfolio is heavily weighted towards BTC (98.5%). Consider diversifying.
+• APT has shown strong momentum recently. Consider increasing your position.
+• There's a good yield opportunity for your USDC on Aries Markets (5.2% APY).
 
-**Recommended Actions:**
-1. Convert some APT to stablecoins for yield farming
-2. Explore liquid staking options for your APT
-3. Consider adding exposure to Aptos ecosystem tokens
-
-Would you like me to suggest specific yield optimization strategies for your portfolio?`;
+Would you like more specific recommendations for rebalancing?`;
         
         // Update the temporary message with the actual response
         setMessages(messages => 
@@ -384,108 +361,78 @@ Would you like me to suggest specific yield optimization strategies for your por
       return true; // Indicate that we handled the portfolio intent
     }
     
-    return false; // Indicate that we didn't handle the message
+    return false; // Indicate that this wasn't a portfolio intent
   };
 
-  // Function to detect yield optimization intent
+  // Detect yield opportunities intent
   const detectYieldIntent = async (message: string) => {
-    const yieldRegex = /(?:best|highest|top|good|better|optimal|maximize|find|suggest|recommend|what('s| is)) (?:yield|apy|interest|returns|rates|opportunities|strategy|strategies) (?:for|on|with) (\d+(?:\.\d+)?) (\w+)/i;
+    const yieldRegex = /yield|apy|interest|lending|staking|earn|best rate/i;
     const match = message.match(yieldRegex);
     
     if (match) {
-      const [_, amount, token] = match;
-      return { amount, token: token.toUpperCase() };
+      // Try to extract token and amount
+      const tokenRegex = /(\w+)\s+(?:yield|apy|interest|lending|staking|earn|rate)/i;
+      const amountRegex = /(\d+(?:\.\d+)?)\s+(\w+)/i;
+      
+      const tokenMatch = message.match(tokenRegex);
+      const amountMatch = message.match(amountRegex);
+      
+      let token = 'USDC'; // Default token
+      let amount = '100'; // Default amount
+      
+      if (tokenMatch && tokenMatch[1]) {
+        token = tokenMatch[1].toUpperCase();
+      }
+      
+      if (amountMatch) {
+        amount = amountMatch[1];
+        if (amountMatch[2]) {
+          token = amountMatch[2].toUpperCase();
+        }
+      }
+      
+      return { isYieldIntent: true, token, amount };
     }
     
-    // Also match general yield questions without specific amount
-    const generalYieldRegex = /(?:best|highest|top|good|better|optimal|maximize|find|suggest|recommend|what('s| is)) (?:yield|apy|interest|returns|rates|opportunities|strategy|strategies) (?:for|on|with) (\w+)/i;
-    const generalMatch = message.match(generalYieldRegex);
-    
-    if (generalMatch) {
-      const [_, token] = generalMatch;
-      return { amount: '1000', token: token.toUpperCase() };
-    }
-    
-    return null;
+    return { isYieldIntent: false };
   };
 
-  // Handle yield optimization intent
+  // Handle yield opportunities intent
   const handleYieldIntent = async (userMessage: string) => {
-    const yieldParams = await detectYieldIntent(userMessage);
+    const { isYieldIntent, token = 'USDC', amount = '100' } = await detectYieldIntent(userMessage);
     
-    if (yieldParams) {
-      const { amount, token } = yieldParams;
-      
-      // Add a temporary message from the assistant
+    if (isYieldIntent) {
+      // Add a temporary message while fetching yield opportunities
       const tempMessageId = Date.now().toString();
-      setMessages([
-        ...messages,
+      setMessages(prev => [
+        ...prev,
         {
           id: tempMessageId,
           role: 'assistant',
-          content: `I'm finding the best yield opportunities for ${amount} ${token}...`,
+          content: `Finding the best yield opportunities for ${amount} ${token}...`
         }
       ]);
       
       try {
-        // In a real implementation, you would fetch actual yield data
-        // For demo purposes, we'll simulate some yield opportunities
-        const mockYieldOpportunities = {
-          lending: [
-            { protocol: 'Abel Finance', apy: '4.2%', risk: 'Medium', lockup: 'None' },
-            { protocol: 'Aries Markets', apy: '3.8%', risk: 'Low', lockup: 'None' },
-            { protocol: 'Thala CDP', apy: '3.5%', risk: 'Low-Medium', lockup: 'None' }
-          ],
-          liquidity: [
-            { protocol: 'PancakeSwap', pair: `${token}-USDC`, apy: '8.5%', risk: 'Medium-High', impermanentLoss: 'Yes' },
-            { protocol: 'Liquidswap', pair: `${token}-USDT`, apy: '7.2%', risk: 'Medium-High', impermanentLoss: 'Yes' }
-          ],
-          staking: [
-            { protocol: 'Amnis Finance', apy: '5.1%', risk: 'Low', lockup: '7 days' },
-            { protocol: 'Echo Protocol', apy: '4.8%', risk: 'Low', lockup: 'None' }
-          ]
-        };
+        // Get yield opportunities
+        const opportunities = await defiService.getYieldOpportunities(token);
         
-        // Calculate potential earnings
-        const parseAmount = parseFloat(amount);
-        const bestLendingApy = parseFloat(mockYieldOpportunities.lending[0].apy);
-        const bestLpApy = parseFloat(mockYieldOpportunities.liquidity[0].apy);
-        const bestStakingApy = parseFloat(mockYieldOpportunities.staking[0].apy);
-        
-        const lendingYearly = (parseAmount * bestLendingApy / 100).toFixed(2);
-        const lpYearly = (parseAmount * bestLpApy / 100).toFixed(2);
-        const stakingYearly = (parseAmount * bestStakingApy / 100).toFixed(2);
-        
-        // Format the response with yield insights
+        // Format the response
         const responseContent = `## Best Yield Opportunities for ${amount} ${token}
 
 ### Lending Protocols
-${mockYieldOpportunities.lending.map((opp, i) => 
-  `${i === 0 ? '🥇' : i === 1 ? '🥈' : '🥉'} **${opp.protocol}**: ${opp.apy} APY (Risk: ${opp.risk})`
+${opportunities.lending.slice(0, 3).map(lending => 
+  `• **${lending.protocol}**: ${lending.apy}% APY (TVL: $${parseInt(lending.totalSupply).toLocaleString()})`
 ).join('\n')}
 
-### Liquidity Provision
-${mockYieldOpportunities.liquidity.map((opp, i) => 
-  `${i === 0 ? '🥇' : '🥈'} **${opp.protocol}** (${opp.pair}): ${opp.apy} APY (Risk: ${opp.risk}, IL: ${opp.impermanentLoss})`
+### Liquidity Pools
+${opportunities.liquidity.slice(0, 3).map(pool => 
+  `• **${pool.protocol}** ${pool.tokens.join('-')}: ${pool.apy.total.toFixed(2)}% APY (TVL: $${pool.tvl.total.toLocaleString()})`
 ).join('\n')}
 
-### Staking Options
-${mockYieldOpportunities.staking.map((opp, i) => 
-  `${i === 0 ? '🥇' : '🥈'} **${opp.protocol}**: ${opp.apy} APY (Risk: ${opp.risk}, Lockup: ${opp.lockup})`
-).join('\n')}
+For ${amount} ${token}, the best option is ${opportunities.lending[0]?.protocol || 'Unknown'} with ${opportunities.lending[0]?.apy || '0'}% APY, which would earn you approximately ${(parseFloat(amount) * parseFloat(opportunities.lending[0]?.apy || '0') / 100).toFixed(2)} ${token} per year.
 
-### Potential Yearly Earnings
-• Lending: $${lendingYearly} with ${mockYieldOpportunities.lending[0].protocol}
-• Liquidity: $${lpYearly} with ${mockYieldOpportunities.liquidity[0].protocol}
-• Staking: $${stakingYearly} with ${mockYieldOpportunities.staking[0].protocol}
-
-### Recommendation
-For ${amount} ${token}, I recommend a balanced approach:
-• 50% in ${mockYieldOpportunities.staking[0].protocol} for stable returns
-• 30% in ${mockYieldOpportunities.lending[0].protocol} for moderate yield
-• 20% in ${mockYieldOpportunities.liquidity[0].protocol} for higher returns with managed risk
-
-Would you like me to help you execute any of these strategies?`;
+Would you like more details on any specific protocol?`;
         
         // Update the temporary message with the actual response
         setMessages(messages => 
@@ -511,175 +458,140 @@ Would you like me to help you execute any of these strategies?`;
       return true; // Indicate that we handled the yield intent
     }
     
-    return false; // Indicate that we didn't handle the message
+    return false; // Indicate that this wasn't a yield intent
   };
 
+  // Handle quick action
   const handleQuickAction = async (query: string) => {
-    // Create a synthetic form event
-    const event = new Event('submit') as any;
-    event.preventDefault = () => {};
-    
-    // Set input and submit immediately
     setInput(query);
-    await handleSubmit(event);
+    
+    // Submit the form programmatically
+    const fakeEvent = { preventDefault: () => {} } as React.FormEvent<HTMLFormElement>;
+    await handleSubmitWithIntentDetection(fakeEvent);
   };
 
-  // Override the default handleSubmit to check for various intents
+  // Handle form submission with intent detection
   const handleSubmitWithIntentDetection = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     
     if (!input.trim()) return;
     
-    // Store the current input before it gets cleared by handleSubmit
-    const currentInput = input;
+    // First, add the user message to the chat
+    const userMessage = input.trim();
+    handleSubmit(e);
     
-    // Check for different intents in order of priority
+    // Then, detect and handle intents
+    const isSwapIntent = await handleSwapIntent(userMessage);
+    if (isSwapIntent) return;
     
-    // First, check if this is a swap confirmation
-    const isConfirmation = await handleSwapConfirmation(currentInput);
-    if (isConfirmation) {
-      // If we handled it as a confirmation, call the original handleSubmit
-      await handleSubmit(e);
-      return;
-    }
+    const isSwapConfirmation = await handleSwapConfirmation(userMessage);
+    if (isSwapConfirmation) return;
     
-    // Then, check if this is a swap intent
-    const isSwapIntent = await handleSwapIntent(currentInput);
-    if (isSwapIntent) {
-      // If we handled it as a swap intent, just clear the input
-      setInput('');
-      return;
-    }
+    const isPortfolioIntent = await handlePortfolioIntent(userMessage);
+    if (isPortfolioIntent) return;
     
-    // Check if this is a portfolio analysis intent
-    const isPortfolioIntent = await handlePortfolioIntent(currentInput);
-    if (isPortfolioIntent) {
-      // If we handled it as a portfolio intent, just clear the input
-      setInput('');
-      return;
-    }
+    const isYieldIntent = await handleYieldIntent(userMessage);
+    if (isYieldIntent) return;
     
-    // Check if this is a yield optimization intent
-    const isYieldIntent = await handleYieldIntent(currentInput);
-    if (isYieldIntent) {
-      // If we handled it as a yield intent, just clear the input
-      setInput('');
-      return;
-    }
-    
-    // Otherwise, proceed with the normal chat flow
-    await handleSubmit(e);
+    // If no specific intent was detected, the default AI response will be used
   };
 
   return (
-    <div className="flex min-h-screen bg-gradient-to-br from-aptos-light-blue via-white to-aptos-light-purple">
+    <main className="flex min-h-screen flex-col">
+      {/* Header */}
+      <header className="sticky top-0 z-10 bg-white/80 backdrop-blur-md border-b border-gray-200">
+        <div className="container mx-auto px-4 py-3 flex justify-between items-center">
+          <div className="flex items-center space-x-4">
+            <button
+              onClick={toggleSidebar}
+              className="p-2 rounded-lg hover:bg-gray-100"
+            >
+              <Bars3Icon className="h-6 w-6 text-gray-700" />
+            </button>
+            <Link href="/" className="flex items-center space-x-2">
+              <AptosLogo />
+              <span className="font-semibold text-xl">DeFi AI Advisor</span>
+            </Link>
+          </div>
+          
+          <div className="flex items-center space-x-3">
+            <button
+              onClick={() => setActiveView('dashboard')}
+              className={`p-2 rounded-lg ${activeView === 'dashboard' ? 'bg-blue-100 text-blue-700' : 'hover:bg-gray-100 text-gray-700'}`}
+              title="Market Dashboard"
+            >
+              <ChartBarIcon className="h-6 w-6" />
+            </button>
+            <button
+              onClick={() => setActiveView('chat')}
+              className={`p-2 rounded-lg ${activeView === 'chat' ? 'bg-blue-100 text-blue-700' : 'hover:bg-gray-100 text-gray-700'}`}
+              title="AI Chat"
+            >
+              <ChatBubbleLeftRightIcon className="h-6 w-6" />
+            </button>
+            <button
+              onClick={toggleNetwork}
+              className={`px-3 py-1 rounded-lg text-sm font-medium ${
+                isTestnet 
+                  ? 'bg-yellow-100 text-yellow-800 hover:bg-yellow-200' 
+                  : 'bg-green-100 text-green-800 hover:bg-green-200'
+              }`}
+            >
+              {isTestnet ? 'Testnet' : 'Mainnet'}
+            </button>
+            <WalletConnect onConnect={() => {}} />
+          </div>
+        </div>
+      </header>
+
       {/* Sidebar */}
       <Sidebar
         chatHistory={chatHistory}
-        onHistoryClick={handleQuickAction}
+        onHistoryClick={handleHistoryClick}
         isOpen={isSidebarOpen}
-        onToggle={() => setIsSidebarOpen(!isSidebarOpen)}
+        onToggle={toggleSidebar}
       />
 
-      {/* Main Content */}
-      <div className="flex-1 flex flex-col">
-        {/* Header */}
-        <header className="fixed top-0 left-0 right-0 z-10 bg-white/80 backdrop-blur-sm border-b border-gray-200">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex items-center justify-between">
-            <div className="flex items-center space-x-4">
-              <button
-                onClick={() => setIsSidebarOpen(!isSidebarOpen)}
-                className="p-2 hover:bg-aptos-light-blue rounded-lg transition-colors"
-              >
-                <Bars3Icon className="h-6 w-6" />
-              </button>
-              <AptosLogo variant="mark" />
-            </div>
-            <h1 className="text-2xl font-bold bg-gradient-aptos bg-clip-text text-transparent">
-              {APTOS_BRAND.name}
-            </h1>
-            <div className="flex items-center space-x-4">
-              {/* Network Indicator with Toggle */}
-              <button 
-                onClick={toggleNetwork}
-                className={`flex items-center px-3 py-1 rounded-full text-sm font-medium transition-colors ${
-                  isTestnet 
-                    ? 'bg-yellow-100 text-yellow-800 border border-yellow-300 hover:bg-yellow-200' 
-                    : 'bg-green-100 text-green-800 border border-green-300 hover:bg-green-200'
-                }`}
-              >
-                <span>{isTestnet ? '⚠️ Testnet' : '🔒 Mainnet'}</span>
-                <ArrowPathIcon className="h-4 w-4 ml-1" />
-              </button>
-              <nav className="hidden md:flex space-x-4">
-                <Link href="/" className="text-gray-700 hover:text-blue-600 px-3 py-2 rounded-md text-sm font-medium">
-                  Home
-                </Link>
-                <Link href="/swap" className="text-gray-700 hover:text-blue-600 px-3 py-2 rounded-md text-sm font-medium">
-                  AI Swap
-                </Link>
-              </nav>
-              <WalletConnect onConnect={() => setIsConnected(true)} />
-            </div>
+      {/* Main content */}
+      <div className="flex-1 container mx-auto px-4 py-6">
+        {activeView === 'dashboard' ? (
+          <div className="space-y-6">
+            <MarketDashboard />
+            <MarketAnalysis onQuerySubmit={handleQuickAction} />
           </div>
-        </header>
-
-        {/* Main Content with padding for suggestions */}
-        <main className="flex-1 w-full mx-auto max-w-4xl px-4 sm:px-6 lg:px-8">
-          <div className="mt-24 mb-40">
+        ) : (
+          <div className="max-w-4xl mx-auto space-y-6">
+            {/* Chat messages */}
+            <div className="space-y-4 mb-6">
             {messages.length === 0 ? (
-              <div className="text-center py-12">
-                <h2 className="text-3xl font-semibold text-gray-900 mb-6">
-                  Welcome to Aptos DeFi Assistant
-                </h2>
-                <p className="text-gray-600 mb-12 max-w-2xl mx-auto">
-                  Your AI-powered guide to the Aptos DeFi ecosystem. Get real-time lending rates,
-                  compare protocols, and discover the best opportunities.
-                </p>
-                <div className="mb-8">
-                  <Link 
-                    href="/swap" 
-                    className="inline-flex items-center px-6 py-3 border border-transparent text-base font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
-                  >
-                    Try AI-Powered Swap
-                  </Link>
-                </div>
+                <div className="py-8">
                 <QuickActions onActionClick={handleQuickAction} />
               </div>
             ) : (
-              <div className="space-y-6">
-                {messages.map((message, i) => (
-                  <ChatMessage key={i} message={message} />
-                ))}
+                messages.map(message => (
+                  <ChatMessage key={message.id} message={message} />
+                ))
+              )}
                 <div ref={messagesEndRef} />
               </div>
-            )}
-          </div>
-        </main>
 
-        {/* Fixed bottom section with suggestions and input */}
-        <div className="fixed bottom-0 left-0 right-0">
-          {/* Floating Suggestions */}
-          <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 mb-4">
-            <FloatingSuggestions 
-              onActionClick={handleQuickAction}
-              currentQuery={input}
-            />
-          </div>
-          
-          {/* Chat Input with gradient background */}
-          <div className="bg-gradient-to-t from-white via-white/90 to-transparent pt-4 pb-6">
-            <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
+            {/* Suggestions */}
+            {messages.length > 0 && (
+              <FloatingSuggestions onActionClick={handleQuickAction} currentQuery={input} />
+            )}
+
+            {/* Chat input */}
+            <div className="sticky bottom-4 pt-2 pb-4 bg-gradient-to-b from-transparent to-white">
               <ChatInput
                 input={input}
                 handleInputChange={handleInputChange}
                 handleSubmit={handleSubmitWithIntentDetection}
-                isConnected={isConnected}
+                isConnected={connected}
               />
             </div>
           </div>
-        </div>
+        )}
       </div>
-    </div>
+    </main>
   );
 }

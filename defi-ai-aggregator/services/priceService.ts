@@ -7,7 +7,9 @@ export class PriceService {
   private readonly COINGECKO_API = 'https://api.coingecko.com/api/v3';
   private readonly CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
   private priceCache: Map<string, TokenPriceResponse> = new Map();
+  private marketDataCache: Map<string, any> = new Map();
   private lastApiCall: number = 0;
+  private readonly API_RATE_LIMIT = 1100; // 1.1 seconds between calls for CoinGecko free tier
 
   private constructor() {}
 
@@ -76,6 +78,137 @@ export class PriceService {
   }
 
   /**
+   * Get detailed market data for a token
+   */
+  async getTokenMarketData(token: TokenType): Promise<any> {
+    const cacheKey = `market_${token.toLowerCase()}`;
+    const cachedData = this.marketDataCache.get(cacheKey);
+    const now = Date.now();
+    
+    // Return cached data if valid
+    if (cachedData && now - cachedData.timestamp < this.CACHE_DURATION) {
+      console.log(`[getTokenMarketData] Using cached data for ${token}`);
+      return cachedData.data;
+    }
+
+    try {
+      return await this.withRateLimit(async () => {
+        // Get token's CoinGecko ID
+        const geckoId = COINGECKO_IDS[token as keyof typeof COINGECKO_IDS];
+        if (!geckoId) {
+          throw new Error(`No CoinGecko ID for token: ${token}`);
+        }
+
+        // Fetch market data from CoinGecko
+        console.log(`[getTokenMarketData] Fetching market data for ${token} (${geckoId}) from CoinGecko`);
+        const response = await axios.get(`${this.COINGECKO_API}/coins/${geckoId}`, {
+          params: {
+            localization: false,
+            tickers: false,
+            market_data: true,
+            community_data: false,
+            developer_data: false,
+            sparkline: false
+          },
+          headers: {
+            'Accept': 'application/json'
+          }
+        });
+
+        if (!response.data || !response.data.market_data) {
+          console.error(`[getTokenMarketData] Invalid response for ${token}:`, response.data);
+          throw new Error(`Invalid market data response for ${token}`);
+        }
+
+        // Log successful data fetch
+        console.log(`[getTokenMarketData] Successfully fetched data for ${token}:`);
+        console.log(`  - Price: $${response.data.market_data.current_price.usd}`);
+        console.log(`  - 24h Change: ${response.data.market_data.price_change_percentage_24h}%`);
+        console.log(`  - Market Cap: $${response.data.market_data.market_cap.usd.toLocaleString()}`);
+
+        // Cache the result
+        this.marketDataCache.set(cacheKey, {
+          data: response.data,
+          timestamp: now
+        });
+
+        return response.data;
+      });
+    } catch (error) {
+      console.error(`[getTokenMarketData] Error fetching market data for ${token}:`, error);
+      
+      // If we have stale cached data, use it as fallback
+      if (cachedData) {
+        console.log(`[getTokenMarketData] Using stale cached data for ${token}`);
+        return cachedData.data;
+      }
+      
+      throw new Error(`No market data available for ${token}`);
+    }
+  }
+
+  /**
+   * Get market data for multiple tokens at once
+   */
+  async getMultipleTokenPrices(tokens: TokenType[]): Promise<Record<string, number>> {
+    try {
+      return await this.withRateLimit(async () => {
+        // Map token symbols to CoinGecko IDs
+        const geckoIds = tokens
+          .map(token => COINGECKO_IDS[token as keyof typeof COINGECKO_IDS])
+          .filter(id => id) // Filter out undefined IDs
+          .join(',');
+
+        if (!geckoIds) {
+          throw new Error('No valid CoinGecko IDs found for the provided tokens');
+        }
+
+        // Fetch price data for all tokens in one request
+        const response = await axios.get<CoinGeckoPrice>(
+          `${this.COINGECKO_API}/simple/price`,
+          {
+            params: {
+              ids: geckoIds,
+              vs_currencies: 'usd'
+            },
+            headers: {
+              'Accept': 'application/json'
+            }
+          }
+        );
+
+        // Map response back to token symbols
+        const result: Record<string, number> = {};
+        tokens.forEach(token => {
+          const geckoId = COINGECKO_IDS[token as keyof typeof COINGECKO_IDS];
+          if (geckoId && response.data[geckoId]) {
+            result[token] = response.data[geckoId].usd;
+          } else {
+            // Use fallback prices for tokens without data
+            if (token === 'APT') result[token] = 6.75;
+            else if (token === 'USDC' || token === 'USDT' || token === 'DAI') result[token] = 1;
+            else result[token] = 0;
+          }
+        });
+
+        return result;
+      });
+    } catch (error) {
+      console.error('[getMultipleTokenPrices] Error:', error);
+      
+      // Return fallback prices
+      const result: Record<string, number> = {};
+      tokens.forEach(token => {
+        if (token === 'APT') result[token] = 6.75;
+        else if (token === 'USDC' || token === 'USDT' || token === 'DAI') result[token] = 1;
+        else result[token] = 0;
+      });
+      
+      return result;
+    }
+  }
+
+  /**
    * Fetch token price from CoinGecko
    */
   private async fetchTokenPrice(token: TokenType): Promise<number> {
@@ -122,12 +255,11 @@ export class PriceService {
    * Rate limit API calls to avoid hitting limits
    */
   private async withRateLimit<T>(fn: () => Promise<T>): Promise<T> {
-    const MIN_DELAY = 1100; // CoinGecko's rate limit is 1 request/second for free tier
     const now = Date.now();
     const timeSinceLastCall = now - (this.lastApiCall || 0);
     
-    if (timeSinceLastCall < MIN_DELAY) {
-      await new Promise(resolve => setTimeout(resolve, MIN_DELAY - timeSinceLastCall));
+    if (timeSinceLastCall < this.API_RATE_LIMIT) {
+      await new Promise(resolve => setTimeout(resolve, this.API_RATE_LIMIT - timeSinceLastCall));
     }
     
     this.lastApiCall = Date.now();

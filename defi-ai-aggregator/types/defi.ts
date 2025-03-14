@@ -96,4 +96,48 @@ export interface AlternativeRoute {
   expectedOutput: string;
   priceImpact: string;
   estimatedGas: number;
+}
+
+// New types for market dashboard
+export interface TokenData {
+  symbol: string;
+  name: string;
+  price: number;
+  change24h: number;
+  volume24h: number;
+  marketCap: number;
+  tvl?: number;
+}
+
+export interface ProtocolData {
+  name: string;
+  tvl: number;
+  change24h: number;
+  change1h?: number;
+  volume24h?: number;
+  category?: string;
+  url?: string;
+  description?: string;
+  chains?: string[];
+}
+
+export interface EcosystemData {
+  totalTVL: number;
+  marketCap: number;
+  volume24h: number;
+  activeUsers: number;
+  transactions24h: number;
+}
+
+export interface MarketData {
+  tokens: TokenData[];
+  protocols: ProtocolData[];
+  ecosystem: EcosystemData;
+  lastUpdated: string;
+}
+
+export interface MarketAnalysisQuery {
+  topic: string;
+  timeframe?: 'day' | 'week' | 'month' | 'year';
+  tokens?: string[];
 } 

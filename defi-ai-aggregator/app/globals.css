@@ -4,12 +4,20 @@
 
 :root {
   --foreground-rgb: 0, 0, 0;
-  --background-rgb: 255, 255, 255;
+  --background-start-rgb: 248, 250, 252;
+  --background-end-rgb: 241, 245, 249;
+  --aptos-blue: 45, 216, 245;
+  --aptos-purple: 139, 92, 246;
 }
 
 body {
   color: rgb(var(--foreground-rgb));
-  background: rgb(var(--background-rgb));
+  background: linear-gradient(
+      to bottom,
+      rgb(var(--background-start-rgb)),
+      rgb(var(--background-end-rgb))
+    )
+    fixed;
 }
 
 /* Add custom styles here */
@@ -27,4 +35,87 @@ body {
 
 .user-message {
   @apply bg-blue-600 text-white;
+}
+
+@layer components {
+  .bg-aptos-blue {
+    background-color: rgb(var(--aptos-blue));
+  }
+  
+  .bg-aptos-purple {
+    background-color: rgb(var(--aptos-purple));
+  }
+  
+  .text-aptos-blue {
+    color: rgb(var(--aptos-blue));
+  }
+  
+  .text-aptos-purple {
+    color: rgb(var(--aptos-purple));
+  }
+  
+  .from-aptos-blue {
+    --tw-gradient-from: rgb(var(--aptos-blue));
+    --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to, rgb(var(--aptos-blue) / 0));
+  }
+  
+  .to-aptos-purple {
+    --tw-gradient-to: rgb(var(--aptos-purple));
+  }
+  
+  .from-aptos-light-blue {
+    --tw-gradient-from: rgba(var(--aptos-blue), 0.1);
+    --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to, rgba(var(--aptos-blue), 0));
+  }
+  
+  .to-aptos-light-purple {
+    --tw-gradient-to: rgba(var(--aptos-purple), 0.1);
+  }
+  
+  .border-aptos-blue {
+    border-color: rgb(var(--aptos-blue));
+  }
+  
+  .border-aptos-purple {
+    border-color: rgb(var(--aptos-purple));
+  }
+  
+  /* Dashboard specific styles */
+  .dashboard-card {
+    @apply bg-white rounded-xl shadow-sm border border-gray-100 p-4 transition-all hover:shadow-md;
+  }
+  
+  .dashboard-stat {
+    @apply text-2xl font-bold text-gray-900;
+  }
+  
+  .dashboard-label {
+    @apply text-sm font-medium text-gray-500 mb-1;
+  }
+  
+  .dashboard-table {
+    @apply min-w-full divide-y divide-gray-200;
+  }
+  
+  .dashboard-table-header {
+    @apply px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider;
+  }
+  
+  .dashboard-table-cell {
+    @apply px-6 py-4 whitespace-nowrap text-sm;
+  }
+  
+  /* Animation utilities */
+  .animate-pulse-slow {
+    animation: pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  }
+  
+  @keyframes pulse {
+    0%, 100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.7;
+    }
+  }
 }
