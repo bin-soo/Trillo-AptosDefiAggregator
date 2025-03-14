@@ -1,13 +1,18 @@
 import { StreamingTextResponse } from 'ai';
-import { OpenAIStream } from 'ai';
+import OpenAI from 'openai';
 import { Configuration, OpenAIApi } from 'openai-edge';
 import defiService from '@/services/defiService';
 import { LendingInfo, SwapRoute } from '@/types/defi';
+import { APTOS_COINS, APTOS_TESTNET_COINS } from '@/services/constants';
 
+// Initialize OpenAI Edge client
 const config = new Configuration({
   apiKey: process.env.OPENAI_API_KEY,
 });
 const openai = new OpenAIApi(config);
+const openaiClient = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
+});
 
 // Helper function to truncate messages array
 function getLastMessages(messages: any[], limit: number = 5) {
@@ -386,24 +391,52 @@ export async function POST(req: Request) {
     }
   }
 
-  // For other queries, use GPT with context
-  const response = await openai.createChatCompletion({
-    model: 'gpt-4',
-    messages: [
-      {
-        role: 'system',
-        content: `You are a DeFi assistant for Aptos blockchain. When users ask about:
-          - Lending rates: Suggest "show lending rates for [token]"
-          - Swaps: Suggest "What's the best rate to swap [tokenA] to [tokenB]?"
-          - Protocols: List available Aptos DeFi protocols
-          Keep responses focused on Aptos DeFi ecosystem.
-          Don't say you can't access real-time data.`
-      },
-      ...getLastMessages(messages)
-    ],
-    stream: true,
-    max_tokens: 500
-  });
-
-  return new StreamingTextResponse(OpenAIStream(response));
+  // For other queries, use OpenAI with web search feature
+  try {
+    // Prepare the prompt with Aptos DeFi context
+    const userQuery = messages[messages.length - 1].content;
+    const searchQuery = `Aptos blockchain DeFi: ${userQuery}`;
+    
+    console.log(`[OpenAI Web Search] Query: "${searchQuery}"`);
+    
+    const response = await openaiClient.responses.create({
+      model: "gpt-4o",
+      tools: [{
+        type: "web_search_preview",
+        search_context_size: "medium", // Use medium for more comprehensive results
+      }],
+      input: searchQuery,
+    });
+    
+    if (!response.output_text) {
+      throw new Error('No output text received from OpenAI');
+    }
+    
+    console.log(`[OpenAI Web Search] Response received (${response.output_text.length} chars)`);
+    
+    // Create a streaming response
+    return new StreamingTextResponse(
+      new ReadableStream({
+        async start(controller) {
+          controller.enqueue(new TextEncoder().encode(response.output_text));
+          controller.close();
+        }
+      })
+    );
+  } catch (error) {
+    console.error('Error using OpenAI web search:', error);
+    
+    // Fallback to a simple response if web search fails
+    return new StreamingTextResponse(
+      new ReadableStream({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode(
+            `I'm sorry, I couldn't retrieve the latest information about your query at ${getFormattedTimestamp()}. ` +
+            `Please try asking a more specific question about Aptos DeFi, or check resources like https://aptoslabs.com or https://defillama.com/chain/Aptos directly.`
+          ));
+          controller.close();
+        },
+      })
+    );
+  }
 } 
