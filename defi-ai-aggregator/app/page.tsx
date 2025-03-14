@@ -35,13 +35,41 @@ export default function Home() {
   const { connected, account } = useWallet();
   const { network, setNetwork } = useNetwork();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const [isClient, setIsClient] = useState(false);
+  const [initialQueryProcessed, setInitialQueryProcessed] = useState(false);
 
   // Set client-side state once mounted to prevent hydration mismatch
   useEffect(() => {
     setIsClient(true);
   }, []);
+
+  // Process query parameter from URL
+  useEffect(() => {
+    if (isClient && !initialQueryProcessed) {
+      const query = searchParams.get('query');
+      if (query) {
+        // Set the input field with the query
+        setInput(query);
+        
+        // Use setTimeout to ensure the input is set before submitting
+        setTimeout(() => {
+          // Create a form submit event and pass it to handleSubmitWithIntentDetection
+          const event = new Event('submit', { cancelable: true }) as any;
+          handleSubmitWithIntentDetection(event);
+          
+          // Mark as processed to prevent reprocessing
+          setInitialQueryProcessed(true);
+          
+          // Clear the query parameter from the URL without refreshing the page
+          const url = new URL(window.location.href);
+          url.searchParams.delete('query');
+          window.history.replaceState({}, '', url);
+        }, 300);
+      }
+    }
+  }, [isClient, searchParams, setInput, initialQueryProcessed]);
 
   // Scroll to bottom when messages change
   useEffect(() => {
