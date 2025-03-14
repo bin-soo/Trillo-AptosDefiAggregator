@@ -1,94 +1,119 @@
-import { APTOS_COLORS } from '@/constants/brand';
-import Link from 'next/link';
+'use client';
+
+import { useState, useEffect } from 'react';
+import { 
+  ArrowsRightLeftIcon, 
+  BanknotesIcon, 
+  ChartBarIcon, 
+  WalletIcon,
+  BeakerIcon,
+  ShieldCheckIcon,
+  CodeBracketIcon
+} from '@heroicons/react/24/outline';
 
 interface QuickActionsProps {
   onActionClick: (query: string) => void;
 }
 
 export default function QuickActions({ onActionClick }: QuickActionsProps) {
-  const suggestions = [
+  const [isMounted, setIsMounted] = useState(false);
+  
+  // Set mounted state on client-side only
+  useEffect(() => {
+    setIsMounted(true);
+  }, []);
+  
+  const actions = [
     {
-      title: "Swap APT to USDC",
-      query: "Swap 1 APT to USDC",
-      icon: "💱"
+      title: 'Swap Tokens',
+      description: 'Find the best rates across DEXes',
+      query: 'Swap 1 APT to USDC',
+      icon: <ArrowsRightLeftIcon className="h-6 w-6" />,
+      color: 'from-blue-600 to-indigo-700',
+      textColor: 'text-blue-300',
+      borderColor: 'border-blue-800'
     },
     {
-      title: "Analyze My Portfolio",
-      query: "Analyze my portfolio and suggest optimizations",
-      icon: "📊"
+      title: 'Yield Opportunities',
+      description: 'Discover the highest APYs',
+      query: 'What are the best yield opportunities for 100 USDC?',
+      icon: <BanknotesIcon className="h-6 w-6" />,
+      color: 'from-green-600 to-emerald-700',
+      textColor: 'text-green-300',
+      borderColor: 'border-green-800'
     },
     {
-      title: "Best Yield for USDC",
-      query: "What's the best yield for 100 USDC?",
-      icon: "💰"
+      title: 'Market Analysis',
+      description: 'Get insights on market trends',
+      query: 'What\'s your price prediction for APT in the next month?',
+      icon: <ChartBarIcon className="h-6 w-6" />,
+      color: 'from-purple-600 to-fuchsia-700',
+      textColor: 'text-purple-300',
+      borderColor: 'border-purple-800'
     },
     {
-      title: "Compare Staking Options",
-      query: "Compare APT staking options",
-      icon: "🔄"
+      title: 'Portfolio Analysis',
+      description: 'Analyze your holdings',
+      query: 'Analyze my portfolio',
+      icon: <WalletIcon className="h-6 w-6" />,
+      color: 'from-amber-600 to-orange-700',
+      textColor: 'text-amber-300',
+      borderColor: 'border-amber-800'
+    },
+    {
+      title: 'Protocol Risks',
+      description: 'Assess security and risks',
+      query: 'What are the risks of using Liquidswap?',
+      icon: <ShieldCheckIcon className="h-6 w-6" />,
+      color: 'from-red-600 to-rose-700',
+      textColor: 'text-red-300',
+      borderColor: 'border-red-800'
+    },
+    {
+      title: 'Developer Tools',
+      description: 'Smart contract insights',
+      query: 'Explain how Aptos Move smart contracts work',
+      icon: <CodeBracketIcon className="h-6 w-6" />,
+      color: 'from-cyan-600 to-sky-700',
+      textColor: 'text-cyan-300',
+      borderColor: 'border-cyan-800'
     }
   ];
 
-  const features = [
-    {
-      title: "AI Portfolio Manager",
-      description: "Get personalized portfolio analysis and optimization",
-      icon: "🤖",
-      href: "#",
-      action: "Analyze my portfolio"
-    },
-    {
-      title: "Yield Optimizer",
-      description: "Find the best yield opportunities across Aptos DeFi",
-      icon: "📈",
-      href: "#",
-      action: "What are the best yield opportunities right now?"
-    }
-  ];
+  // Don't render anything during SSR
+  if (!isMounted) {
+    return <div className="h-40 w-full bg-gray-800/30 animate-pulse rounded-xl"></div>;
+  }
 
   return (
-    <div className="space-y-8">
-      {/* Feature Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-8">
-        {features.map((feature, i) => (
+    <div className="space-y-4">
+      <h2 className="text-xl font-bold text-center text-blue-300 mb-6">What would you like to do?</h2>
+      
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        {actions.map((action, index) => (
           <button
-            key={i}
-            onClick={() => onActionClick(feature.action)}
-            className="p-6 rounded-xl bg-white shadow-md hover:shadow-lg 
-              transition-all group text-left border border-gray-200"
+            key={index}
+            onClick={() => onActionClick(action.query)}
+            className={`relative overflow-hidden group border ${action.borderColor} bg-gray-800/50 backdrop-blur-sm rounded-xl p-4 text-left transition-all duration-300 hover:shadow-lg hover:-translate-y-1`}
           >
-            <div className="flex items-start space-x-4">
-              <span className="text-3xl group-hover:scale-110 transition-transform">
-                {feature.icon}
-              </span>
+            {/* Gradient background effect */}
+            <div className={`absolute inset-0 bg-gradient-to-br ${action.color} opacity-0 group-hover:opacity-10 transition-opacity duration-300`}></div>
+            
+            {/* Content */}
+            <div className="flex items-start space-x-3 relative z-10">
+              <div className={`p-2 rounded-lg bg-gray-900/80 ${action.textColor}`}>
+                {action.icon}
+              </div>
               <div>
-                <h3 className="font-medium text-lg text-gray-900">{feature.title}</h3>
-                <p className="text-sm text-gray-500">{feature.description}</p>
+                <h3 className={`font-bold ${action.textColor}`}>{action.title}</h3>
+                <p className="text-sm text-gray-400 mt-1">{action.description}</p>
               </div>
             </div>
-          </button>
-        ))}
-      </div>
-
-      {/* Quick Action Buttons */}
-      <h3 className="text-lg font-medium text-gray-900 mb-4">Quick Actions</h3>
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        {suggestions.map((suggestion, i) => (
-          <button
-            key={i}
-            onClick={() => onActionClick(suggestion.query)}
-            className="p-4 rounded-xl bg-gradient-to-r from-aptos-light-blue to-aptos-light-purple 
-              hover:from-aptos-blue/10 hover:to-aptos-purple/10 backdrop-blur-sm
-              transition-all group text-left"
-          >
-            <div className="flex items-center space-x-3">
-              <span className="text-2xl group-hover:scale-110 transition-transform">
-                {suggestion.icon}
-              </span>
-              <div>
-                <h3 className="font-medium text-gray-900">{suggestion.title}</h3>
-                <p className="text-sm text-gray-500 truncate">{suggestion.query}</p>
-              </div>
+            
+            {/* Tech pattern background */}
+            <div className="absolute -right-4 -bottom-4 opacity-10">
+              <div className="w-24 h-24 border border-dashed rounded-full"></div>
+              <div className="w-16 h-16 border border-dashed rounded-full absolute top-4 left-4"></div>
             </div>
           </button>
         ))}

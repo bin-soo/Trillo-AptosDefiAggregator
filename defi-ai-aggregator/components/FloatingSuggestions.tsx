@@ -1,82 +1,104 @@
+'use client';
+
 import { useState, useEffect } from 'react';
-import Link from 'next/link';
+import { LightBulbIcon } from '@heroicons/react/24/solid';
 
 interface FloatingSuggestionsProps {
   onActionClick: (query: string) => void;
   currentQuery: string;
+  setInputText?: (text: string) => void;
 }
 
-export default function FloatingSuggestions({ onActionClick, currentQuery }: FloatingSuggestionsProps) {
-  const [suggestions, setSuggestions] = useState<Array<{title: string; query: string; isLink?: boolean; href?: string}>>([]);
+export default function FloatingSuggestions({ 
+  onActionClick, 
+  currentQuery, 
+  setInputText 
+}: FloatingSuggestionsProps) {
+  const [suggestions, setSuggestions] = useState<string[]>([]);
+  const [isVisible, setIsVisible] = useState(false);
+  const [isMounted, setIsMounted] = useState(false);
 
+  // Set mounted state on client-side only
   useEffect(() => {
-    // Dynamic suggestions based on current query
-    if (currentQuery.toLowerCase().includes('swap') || currentQuery.toLowerCase().includes('trade')) {
-      setSuggestions([
-        { title: "Swap 1 APT to USDC", query: "Swap 1 APT to USDC" },
-        { title: "Best APT to USDC rate", query: "What's the best rate to swap APT to USDC?" },
-        { title: "Compare DEXes", query: "Compare DEX rates on Aptos" }
-      ]);
-    } else if (currentQuery.toLowerCase().includes('portfolio') || currentQuery.toLowerCase().includes('wallet')) {
-      setSuggestions([
-        { title: "Analyze my portfolio", query: "Analyze my portfolio" },
-        { title: "Optimize my holdings", query: "How can I optimize my current holdings?" },
-        { title: "Rebalance suggestions", query: "Suggest portfolio rebalancing" }
-      ]);
-    } else if (currentQuery.toLowerCase().includes('yield') || currentQuery.toLowerCase().includes('apy')) {
-      setSuggestions([
-        { title: "Best APT yield", query: "What's the best yield for APT?" },
-        { title: "Stablecoin yields", query: "Compare stablecoin yields" },
-        { title: "Yield farming strategies", query: "Suggest yield farming strategies" }
-      ]);
-    } else if (currentQuery.toLowerCase().includes('usdc')) {
-      setSuggestions([
-        { title: "Compare with USDT", query: "Compare USDC and USDT lending rates" },
-        { title: "Show all pools", query: "Show all USDC pools" },
-        { title: "Swap USDC to APT", query: "Swap 10 USDC to APT" }
-      ]);
-    } else if (currentQuery.toLowerCase().includes('apt')) {
-      setSuggestions([
-        { title: "Staking options", query: "What are the APT staking options?" },
-        { title: "Compare yields", query: "Compare APT lending vs staking yields" },
-        { title: "Swap APT", query: "Swap 1 APT to USDC" }
-      ]);
+    setIsMounted(true);
+  }, []);
+
+  // Generate contextual suggestions based on current query
+  useEffect(() => {
+    if (!isMounted) return;
+    
+    if (currentQuery.trim().length > 0) {
+      // Generate suggestions based on the current query
+      if (currentQuery.toLowerCase().includes('swap')) {
+        setSuggestions([
+          'Swap 5 APT to USDC',
+          'What\'s the best DEX for swapping APT?',
+          'Compare swap rates across DEXes'
+        ]);
+      } else if (currentQuery.toLowerCase().includes('yield') || currentQuery.toLowerCase().includes('apy')) {
+        setSuggestions([
+          'Best yield for stablecoins',
+          'Compare lending rates for APT',
+          'Risks of high APY protocols'
+        ]);
+      } else if (currentQuery.toLowerCase().includes('price') || currentQuery.toLowerCase().includes('market')) {
+        setSuggestions([
+          'APT price prediction next week',
+          'Market sentiment analysis for Aptos',
+          'Top performing Aptos protocols'
+        ]);
+      } else {
+        // Default suggestions
+        setSuggestions([
+          'How to stake APT for rewards?',
+          'Explain impermanent loss',
+          'Best DeFi strategies for beginners'
+        ]);
+      }
+      setIsVisible(true);
     } else {
-      setSuggestions([
-        { title: "Analyze my portfolio", query: "Analyze my portfolio" },
-        { title: "Best yield for 100 USDC", query: "What's the best yield for 100 USDC?" },
-        { title: "Swap 1 APT to USDC", query: "Swap 1 APT to USDC" }
-      ]);
+      setIsVisible(false);
     }
-  }, [currentQuery]);
+  }, [currentQuery, isMounted]);
+
+  // Handle suggestion click
+  const handleSuggestionClick = (suggestion: string) => {
+    // First update the input text if the setter is provided
+    if (setInputText) {
+      setInputText(suggestion);
+    }
+    
+    // Then trigger the action with the suggestion text
+    onActionClick(suggestion);
+  };
+
+  // Don't render anything during SSR
+  if (!isMounted) return null;
+  
+  // Don't render if not visible or no suggestions
+  if (!isVisible || suggestions.length === 0) {
+    return null;
+  }
 
   return (
-    <div className="flex space-x-2 overflow-x-auto pb-2">
-      {suggestions.map((suggestion, i) => (
-        suggestion.isLink ? (
-          <Link
-            key={i}
-            href={suggestion.href || "#"}
-            className="flex-none px-4 py-2 rounded-full bg-white hover:bg-gray-50 
-              border border-gray-200 shadow-sm hover:shadow
-              text-sm text-gray-700 hover:text-gray-900 transition-all
-              whitespace-nowrap"
-          >
-            {suggestion.title}
-          </Link>
-        ) : (
+    <div className="w-full max-w-4xl mx-auto">
+      <div className="flex items-center space-x-2 mb-2">
+        <LightBulbIcon className="h-4 w-4 text-yellow-400" />
+        <span className="text-xs text-gray-400 font-mono">SUGGESTIONS</span>
+      </div>
+      
+      <div className="flex flex-wrap gap-2">
+        {suggestions.map((suggestion, index) => (
           <button
-            key={i}
-            onClick={() => onActionClick(suggestion.query)}
-            className="flex-none px-4 py-2 rounded-full bg-white hover:bg-gray-50 
-              border border-gray-200 shadow-sm hover:shadow
-              text-sm text-gray-700 hover:text-gray-900 transition-all
-              whitespace-nowrap"
+            key={index}
+            onClick={() => handleSuggestionClick(suggestion)}
+            className="px-3 py-1.5 bg-gray-800/80 hover:bg-gray-700 border border-gray-700 rounded-full text-sm text-gray-300 transition-colors flex items-center space-x-1 group"
           >
-            {suggestion.title}
+            <span className="text-xs text-blue-400 group-hover:text-blue-300">&gt;</span>
+            <span>{suggestion}</span>
           </button>
-        )
-      ))}
+        ))}
+      </div>
     </div>
   );
 } 

@@ -27,6 +27,8 @@
     "petra-plugin-wallet-adapter": "^0.3.0",
     "react": "^18",
     "react-dom": "^18",
+    "react-markdown": "^10.1.0",
+    "react-syntax-highlighter": "^15.6.1",
     "react-textarea-autosize": "^8.5.8",
     "tailwindcss-animate": "^1.0.7"
   },

@@ -48,59 +48,84 @@ function extractToken(message: string): string | null {
 
 // Helper to extract swap parameters
 function extractSwapParams(message: string): { amount: string; tokenIn: string; tokenOut: string } | null {
-  // Match patterns like "swap 5 APT to USDC" or "exchange 10 USDC for APT"
-  const swapMatch = message.match(/(?:swap|exchange)\s+(\d+(?:\.\d+)?)\s+(\w+)\s+(?:to|for)\s+(\w+)/i);
-  if (swapMatch) {
-    const [_, amount, tokenIn, tokenOut] = swapMatch;
-    return {
-      amount,
-      tokenIn: tokenIn.toUpperCase(),
-      tokenOut: tokenOut.toUpperCase()
-    };
+  // Skip extraction if this is clearly a price prediction or market analysis query
+  if (message.includes('price prediction') || 
+      message.includes('market analysis') || 
+      message.includes('sentiment') ||
+      message.includes('forecast')) {
+    return null;
   }
   
-  // Match patterns like "best rate for 5 APT to USDC"
-  const rateMatch = message.match(/(?:rate|price).+?(\d+(?:\.\d+)?)\s+(\w+)\s+(?:to|for)\s+(\w+)/i);
-  if (rateMatch) {
-    const [_, amount, tokenIn, tokenOut] = rateMatch;
-    return {
-      amount,
-      tokenIn: tokenIn.toUpperCase(),
-      tokenOut: tokenOut.toUpperCase()
-    };
+  // More strict swap regex that requires the word "swap" explicitly
+  const swapRegex = /\b(?:swap|exchange|trade|convert)\b\s+(\d+(?:\.\d+)?)\s+(\w+)\s+(?:to|for|into)\s+(\w+)/i;
+  const match = message.match(swapRegex);
+  
+  if (match) {
+    const [_, amount, tokenIn, tokenOut] = match;
+    console.log(`Detected swap intent: ${amount} ${tokenIn} to ${tokenOut}`);
+    return { amount, tokenIn: tokenIn.toUpperCase(), tokenOut: tokenOut.toUpperCase() };
   }
-
-  // Match simple patterns like "swap APT to USDC" (without amount)
-  const simpleMatch = message.match(/(?:swap|rate|price|exchange).*?(\w+)\s+(?:to|for)\s+(\w+)/i);
-  if (simpleMatch) {
-    const [_, tokenIn, tokenOut] = simpleMatch;
-    return {
-      amount: '1', // Default amount
-      tokenIn: tokenIn.toUpperCase(),
-      tokenOut: tokenOut.toUpperCase()
-    };
+  
+  // Try more flexible pattern matching, but only if "swap" is mentioned
+  if (message.toLowerCase().includes('swap')) {
+    const tokenRegex = /(\w+)\s+(?:to|for|into)\s+(\w+)/i;
+    const amountRegex = /(\d+(?:\.\d+)?)\s+(\w+)/i;
+    
+    const tokenMatch = message.match(tokenRegex);
+    const amountMatch = message.match(amountRegex);
+    
+    if (tokenMatch && amountMatch) {
+      const [_, tokenInFromAmount, tokenInFromToken] = amountMatch;
+      const [__, tokenInFromPair, tokenOutFromPair] = tokenMatch;
+      
+      // Determine which token is which
+      let finalTokenIn, finalTokenOut, finalAmount;
+      
+      if (tokenInFromToken.toUpperCase() === tokenInFromPair.toUpperCase()) {
+        finalTokenIn = tokenInFromToken.toUpperCase();
+        finalTokenOut = tokenOutFromPair.toUpperCase();
+        finalAmount = tokenInFromAmount;
+      } else {
+        finalTokenIn = tokenInFromPair.toUpperCase();
+        finalTokenOut = tokenOutFromPair.toUpperCase();
+        finalAmount = tokenInFromAmount;
+      }
+      
+      console.log(`Detected flexible swap intent: ${finalAmount} ${finalTokenIn} to ${finalTokenOut}`);
+      return { amount: finalAmount, tokenIn: finalTokenIn, tokenOut: finalTokenOut };
+    }
   }
+  
   return null;
 }
 
 function formatSwapResponse(route: SwapRoute, timestamp: string): string {
-  let response = `🔄 Best Swap Route for ${route.amount} ${route.tokenIn.symbol} to ${route.tokenOut.symbol} (${timestamp}):\n\n`;
+  // Handle the case where tokenIn or tokenOut might be undefined
+  const tokenInSymbol = route.tokenIn?.symbol || route.fromToken;
+  const tokenOutSymbol = route.tokenOut?.symbol || route.toToken;
   
-  response += `💱 Expected Output: ${route.expectedOutput} ${route.tokenOut.symbol}\n`;
-  response += `📊 Best DEX: ${route.protocol}\n`;
+  let response = `🔄 Best Swap Route for ${route.amount || route.fromAmount} ${tokenInSymbol} to ${tokenOutSymbol} (${timestamp}):\n\n`;
+  
+  response += `💱 Expected Output: ${route.expectedOutput} ${tokenOutSymbol}\n`;
+  response += `📊 Best DEX: ${route.protocol || route.dex}\n`;
   response += `📈 Price Impact: ${route.priceImpact}%\n`;
   response += `⛽ Estimated Gas: ${route.estimatedGas}\n\n`;
 
   if (route.alternativeRoutes?.length) {
     response += `Alternative Routes:\n`;
     route.alternativeRoutes.forEach((alt, i) => {
-      response += `${i + 1}. ${alt.protocol}: ${alt.expectedOutput} ${route.tokenOut.symbol}\n`;
+      response += `${alt.protocol}: ${alt.expectedOutput} ${tokenOutSymbol}\n`;
     });
     response += '\n';
   }
 
-  response += `🔗 Execute trade: ${route.dexUrl}\n\n`;
-  response += `Note: Rates are subject to change • DYOR`;
+  // Only add the dexUrl if it's defined
+  if (route.dexUrl) {
+    response += `🔗 Execute trade: ${route.dexUrl}\n\n`;
+  }
+
+  response += `To execute this swap directly through our assistant, simply reply with "yes" or "execute swap".`;
+  response += `\n\nNote: Rates are subject to change • DYOR`;
 
   return response;
 }
@@ -244,11 +269,75 @@ function isGeneralQuestion(message: string): boolean {
   return words.some(word => generalQuestionKeywords.includes(word));
 }
 
+function isMarketAnalysisQuery(message: string): boolean {
+  const marketKeywords = [
+    'price prediction', 
+    'price forecast',
+    'price outlook',
+    'price target',
+    'predict price',
+    'predict the price',
+    'price in the next',
+    'market analysis',
+    'market sentiment',
+    'market outlook',
+    'market trend',
+    'bullish',
+    'bearish',
+    'forecast',
+    'analysis',
+    'sentiment'
+  ];
+  
+  const lowercaseMessage = message.toLowerCase();
+  
+  // Check for specific token + prediction patterns
+  if ((lowercaseMessage.includes('apt') || lowercaseMessage.includes('aptos')) && 
+      (lowercaseMessage.includes('prediction') || 
+       lowercaseMessage.includes('forecast') || 
+       lowercaseMessage.includes('outlook'))) {
+    return true;
+  }
+  
+  // Check for any of the market keywords
+  return marketKeywords.some(keyword => lowercaseMessage.includes(keyword));
+}
+
 export async function POST(req: Request) {
   const { messages } = await req.json();
   const lastMessage = messages[messages.length - 1].content.toLowerCase();
 
-  // Handle swap queries
+  // Step 1: Check if this is a market analysis or price prediction query
+  if (isMarketAnalysisQuery(lastMessage)) {
+    const defiService = await import('@/services/defiService').then(mod => mod.default);
+    
+    try {
+      // Extract topic from the message
+      let topic = lastMessage;
+      if (lastMessage.includes('price prediction')) {
+        topic = 'price prediction';
+      } else if (lastMessage.includes('sentiment')) {
+        topic = 'market sentiment';
+      } else if (lastMessage.includes('analysis')) {
+        topic = 'market analysis';
+      }
+      
+      console.log(`[API] Generating market analysis for topic: ${topic}`);
+      const analysis = await defiService.getMarketAnalysis(topic);
+      
+      return new Response(analysis, {
+        headers: { 'Content-Type': 'text/plain' },
+      });
+    } catch (error) {
+      console.error('Error generating market analysis:', error);
+      return new Response(
+        `I'm sorry, I couldn't generate a market analysis at this time. The error was: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        { headers: { 'Content-Type': 'text/plain' } }
+      );
+    }
+  }
+
+  // Step 2: Check if this is a swap query
   const swapParams = extractSwapParams(lastMessage);
   if (swapParams) {
     try {
@@ -308,8 +397,9 @@ export async function POST(req: Request) {
     }
   }
 
-  // Handle yield comparison queries
-  if (lastMessage.includes('compare yields') || lastMessage.includes('best yield')) {
+  // Step 3: Check if this is a yield query
+  const yieldMatch = lastMessage.match(/(?:best|highest|top)\s+(?:yield|apy|interest|returns?)\s+(?:for|on)\s+(\d+)?\s*([a-z]{3,4})/i);
+  if (yieldMatch) {
     const token = extractToken(lastMessage);
     if (token) {
       try {
@@ -331,8 +421,9 @@ export async function POST(req: Request) {
     }
   }
 
-  // Handle lending rate queries
-  if (lastMessage.includes('lending rate') || lastMessage.includes('apy')) {
+  // Step 4: Check if this is a lending rate query
+  const lendingMatch = lastMessage.match(/(?:lending|borrow(?:ing)?|supply|deposit)\s+(?:rates?|apy|interest)\s+(?:for|on)?\s*([a-z]{3,4})/i);
+  if (lendingMatch) {
     const token = lastMessage.includes('usdc') ? 'USDC' : 
                   lastMessage.includes('apt') ? 'APT' :
                   lastMessage.includes('usdt') ? 'USDT' :
@@ -391,10 +482,12 @@ export async function POST(req: Request) {
     }
   }
 
-  // For other queries, use OpenAI with web search feature
+  // Step 5: If none of the specialized handlers matched, use OpenAI with web search
+  console.log('[API] No specialized handler matched, using OpenAI web search');
+  
   try {
-    // Prepare the prompt with Aptos DeFi context
     const userQuery = messages[messages.length - 1].content;
+    // Add Aptos context to the search query to get more relevant results
     const searchQuery = `Aptos blockchain DeFi: ${userQuery}`;
     
     console.log(`[OpenAI Web Search] Query: "${searchQuery}"`);
@@ -403,7 +496,7 @@ export async function POST(req: Request) {
       model: "gpt-4o",
       tools: [{
         type: "web_search_preview",
-        search_context_size: "medium", // Use medium for more comprehensive results
+        search_context_size: "high", // Use high for more comprehensive results
       }],
       input: searchQuery,
     });

@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { MagnifyingGlassIcon, ArrowRightIcon } from '@heroicons/react/24/outline';
+import { useRouter } from 'next/navigation';
 
 interface MarketAnalysisProps {
   onQuerySubmit: (query: string) => void;
@@ -9,6 +10,7 @@ interface MarketAnalysisProps {
 
 export default function MarketAnalysis({ onQuerySubmit }: MarketAnalysisProps) {
   const [customQuery, setCustomQuery] = useState('');
+  const router = useRouter();
 
   const predefinedQueries = [
     {
@@ -52,9 +54,14 @@ export default function MarketAnalysis({ onQuerySubmit }: MarketAnalysisProps) {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (customQuery.trim()) {
-      onQuerySubmit(customQuery);
+      handleQuerySubmit(customQuery);
       setCustomQuery('');
     }
+  };
+  
+  const handleQuerySubmit = (query: string) => {
+    // Call the onQuerySubmit prop which will handle navigation
+    onQuerySubmit(query);
   };
 
   return (
@@ -99,7 +106,7 @@ export default function MarketAnalysis({ onQuerySubmit }: MarketAnalysisProps) {
           {predefinedQueries.map((item, index) => (
             <button
               key={index}
-              onClick={() => onQuerySubmit(item.query)}
+              onClick={() => handleQuerySubmit(item.query)}
               className={`p-4 rounded-xl border text-left transition-all ${item.color}`}
             >
               <div className="flex justify-between items-start">
@@ -132,8 +139,8 @@ export default function MarketAnalysis({ onQuerySubmit }: MarketAnalysisProps) {
               for lower risk exposure.
             </p>
             <button
-              onClick={() => onQuerySubmit("Tell me more about the current Aptos ecosystem growth and opportunities")}
-              className="mt-3 text-blue-600 hover:text-blue-800 text-sm font-medium flex items-center"
+              onClick={() => handleQuerySubmit("Tell me more about the current Aptos ecosystem growth and opportunities")}
+              className="mt-3 text-sm font-medium text-blue-600 hover:text-blue-800 flex items-center"
             >
               Learn more
               <ArrowRightIcon className="h-4 w-4 ml-1" />

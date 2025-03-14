@@ -7,8 +7,8 @@ interface AptosLogoProps {
 
 export default function AptosLogo({ variant = 'mark', className = 'h-8 w-8' }: AptosLogoProps) {
   const logoSrc = variant === 'mark' 
-    ? '/static/Aptos_mark_BLK.svg'
-    : '/static/Aptos_Primary_BLK.svg';
+    ? '/static/Aptos_mark_WHT.svg'
+    : '/static/Aptos_Primary_WHT.svg';
 
   return (
     <Image

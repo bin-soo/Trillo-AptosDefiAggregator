@@ -1,218 +1,219 @@
-import { Message } from 'ai';
-import { DeFiAction, SwapRoute } from '@/types/defi';
+'use client';
+
 import { useState, useEffect } from 'react';
-import { useWallet } from '@aptos-labs/wallet-adapter-react';
-import defiService from '@/services/defiService';
-import { useNetwork } from '@/app/providers';
+import { Message } from 'ai';
+import ReactMarkdown from 'react-markdown';
+import { UserIcon, CodeBracketIcon, ClipboardIcon, CheckIcon } from '@heroicons/react/24/outline';
+import { SparklesIcon } from '@heroicons/react/24/solid';
+import AptosLogo from './AptosLogo';
 
 interface ChatMessageProps {
-  message: Message & { action?: DeFiAction };
+  message: Message & { action?: any };
 }
 
 export default function ChatMessage({ message }: ChatMessageProps) {
-  const isAssistant = message.role === 'assistant';
-  const { connected, account } = useWallet();
-  const { isTestnet } = useNetwork();
-  const [isExecuting, setIsExecuting] = useState(false);
-  const [txStatus, setTxStatus] = useState<'pending' | 'success' | 'error' | null>(null);
-  const [txHash, setTxHash] = useState<string | null>(null);
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [testnetOutput, setTestnetOutput] = useState<string | null>(null);
-  const [isLoadingTestnetRate, setIsLoadingTestnetRate] = useState(false);
-
-  // Fetch testnet rate when component mounts if this is a swap action
+  const [copied, setCopied] = useState(false);
+  const [showActions, setShowActions] = useState(false);
+  const [timestamp, setTimestamp] = useState<string>('');
+  const isUser = message.role === 'user';
+  
+  // Set timestamp on client-side only to avoid hydration mismatch
   useEffect(() => {
-    if (isTestnet && message.action?.type === 'swap') {
-      const fetchTestnetRate = async () => {
-        setIsLoadingTestnetRate(true);
-        try {
-          const route = message.action?.data as SwapRoute;
-          const testnetRate = await defiService.getTestnetExchangeRate(
-            route.fromToken as any,
-            route.toToken as any
-          );
-          const output = (parseFloat(route.fromAmount) * testnetRate).toFixed(6);
-          setTestnetOutput(output);
-        } catch (error) {
-          console.error('Error fetching testnet rate:', error);
-        } finally {
-          setIsLoadingTestnetRate(false);
-        }
-      };
+    setTimestamp(new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
+  }, []);
+  
+  // Copy message content to clipboard
+  const copyToClipboard = () => {
+    navigator.clipboard.writeText(message.content);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+  
+  // Handle action button click
+  const handleActionClick = () => {
+    if (message.action?.type === 'swap') {
+      console.log('Executing swap action:', message.action);
       
-      fetchTestnetRate();
-    }
-  }, [isTestnet, message.action]);
-
-  // Function to execute a swap
-  const executeSwap = async (route: SwapRoute) => {
-    if (!connected || !account) {
-      setErrorMessage('Please connect your wallet first');
-      return;
-    }
-
-    setIsExecuting(true);
-    setTxStatus('pending');
-    setErrorMessage(null);
-
-    try {
-      // Execute the swap
-      const result = await defiService.executeSwap(
-        account.address,
-        route.fromToken as any,
-        route.toToken as any,
-        route.fromAmount,
-        0.5 // Default slippage
-      );
-
-      if (!result.success || !result.payload) {
-        throw new Error(result.error || 'Failed to prepare transaction');
-      }
-
-      // Use the Petra wallet API directly
-      if (!(window as any).aptos) {
-        throw new Error('Petra wallet not found. Please make sure it is installed and connected.');
-      }
-
-      console.log('Transaction payload:', JSON.stringify(result.payload, null, 2));
-      
-      // Sign and submit the transaction using Petra wallet
-      try {
-        const pendingTransaction = await (window as any).aptos.signAndSubmitTransaction(result.payload);
+      // For swap actions, we'll simulate typing "yes" in the chat input
+      const inputElement = document.querySelector('textarea') as HTMLTextAreaElement;
+      if (inputElement) {
+        // Set the input value to "yes"
+        const nativeInputValueSetter = Object.getOwnPropertyDescriptor(
+          window.HTMLTextAreaElement.prototype, "value"
+        )?.set;
         
-        console.log('Transaction submitted:', pendingTransaction);
-        
-        if (!pendingTransaction || !pendingTransaction.hash) {
-          throw new Error('Transaction rejected or failed');
+        if (nativeInputValueSetter) {
+          nativeInputValueSetter.call(inputElement, "yes");
+          
+          // Dispatch input event
+          const inputEvent = new Event('input', { bubbles: true });
+          inputElement.dispatchEvent(inputEvent);
+          
+          // Focus the input
+          inputElement.focus();
+          
+          // Submit the form
+          const form = inputElement.closest('form');
+          if (form) {
+            setTimeout(() => {
+              form.dispatchEvent(new Event('submit', { cancelable: true }));
+            }, 100); // Small delay to ensure the input is processed
+          }
         }
-
-        setTxHash(pendingTransaction.hash);
-        setTxStatus('success');
-      } catch (txError) {
-        console.error('Transaction error:', txError);
-        throw new Error(`Transaction failed: ${txError instanceof Error ? txError.message : String(txError)}`);
       }
-    } catch (error) {
-      console.error('Swap execution error:', error);
-      setTxStatus('error');
-      setErrorMessage(error instanceof Error ? error.message : 'Unknown error executing swap');
-    } finally {
-      setIsExecuting(false);
     }
   };
-
-  // Function to render markdown-like content
-  const renderContent = (content: string) => {
-    // Process headers
-    let processedContent = content.replace(/## (.*?)$/gm, '<h2 class="text-lg font-bold mt-3 mb-2">$1</h2>');
-    processedContent = processedContent.replace(/### (.*?)$/gm, '<h3 class="text-md font-semibold mt-2 mb-1">$1</h3>');
-    
-    // Process bold text
-    processedContent = processedContent.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
-    
-    // Process lists
-    processedContent = processedContent.replace(/• (.*?)$/gm, '<li class="ml-4">$1</li>');
-    processedContent = processedContent.replace(/(\d+)\. (.*?)$/gm, '<li class="ml-4">$1. $2</li>');
-    
-    // Process line breaks
-    processedContent = processedContent.replace(/\n\n/g, '<br/><br/>');
-    
-    return <div dangerouslySetInnerHTML={{ __html: processedContent }} />;
+  
+  // Handle code blocks in markdown
+  const components = {
+    code({ node, inline, className, children, ...props }: any) {
+      const match = /language-(\w+)/.exec(className || '');
+      return !inline ? (
+        <div className="relative group">
+          <div className="absolute right-2 top-2 opacity-0 group-hover:opacity-100 transition-opacity">
+            <button
+              onClick={() => copyToClipboard()}
+              className="p-1 rounded bg-gray-800 text-gray-300 hover:bg-gray-700"
+              title="Copy code"
+            >
+              {copied ? <CheckIcon className="h-4 w-4" /> : <ClipboardIcon className="h-4 w-4" />}
+            </button>
+          </div>
+          <pre className={`${match ? `language-${match[1]}` : ''} rounded-md bg-gray-800 p-4 overflow-x-auto text-sm font-mono text-gray-200`}>
+            <code {...props}>{children}</code>
+          </pre>
+        </div>
+      ) : (
+        <code className="bg-gray-800 px-1 py-0.5 rounded text-gray-200 font-mono text-sm" {...props}>
+          {children}
+        </code>
+      );
+    },
+    // Style tables
+    table({ children }: any) {
+      return (
+        <div className="overflow-x-auto my-4">
+          <table className="min-w-full divide-y divide-gray-700 border border-gray-700 rounded-md">
+            {children}
+          </table>
+        </div>
+      );
+    },
+    thead({ children }: any) {
+      return <thead className="bg-gray-800">{children}</thead>;
+    },
+    th({ children }: any) {
+      return <th className="px-4 py-2 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">{children}</th>;
+    },
+    td({ children }: any) {
+      return <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-300 border-t border-gray-700">{children}</td>;
+    },
+    // Style links
+    a({ children, href }: any) {
+      return (
+        <a 
+          href={href} 
+          target="_blank" 
+          rel="noopener noreferrer" 
+          className="text-blue-400 hover:text-blue-300 underline"
+        >
+          {children}
+        </a>
+      );
+    },
+    // Style headings
+    h1({ children }: any) {
+      return <h1 className="text-xl font-bold text-blue-300 mt-4 mb-2">{children}</h1>;
+    },
+    h2({ children }: any) {
+      return <h2 className="text-lg font-bold text-blue-300 mt-4 mb-2">{children}</h2>;
+    },
+    h3({ children }: any) {
+      return <h3 className="text-md font-bold text-blue-300 mt-3 mb-1">{children}</h3>;
+    },
+    // Style lists
+    ul({ children }: any) {
+      return <ul className="list-disc pl-5 space-y-1 my-2 text-gray-300">{children}</ul>;
+    },
+    ol({ children }: any) {
+      return <ol className="list-decimal pl-5 space-y-1 my-2 text-gray-300">{children}</ol>;
+    },
+    // Style paragraphs
+    p({ children }: any) {
+      return <p className="my-2 text-gray-300">{children}</p>;
+    },
   };
 
   return (
-    <div className={`flex ${isAssistant ? 'justify-start' : 'justify-end'} mb-4`}>
-      <div
-        className={`
-          rounded-2xl px-4 py-3 max-w-[85%] shadow-sm
-          ${isAssistant 
-            ? 'bg-white text-gray-900 border border-gray-200' 
-            : 'bg-blue-600 text-white'}
-        `}
-      >
-        {renderContent(message.content)}
-        
-        {message.action && message.action.type === 'swap' && (
-          <div
-            className={`
-              mt-3 p-3 rounded-lg
-              ${isAssistant 
-                ? 'bg-gray-50 border border-gray-200' 
-                : 'bg-blue-700'}
-            `}
-          >
-            <p className="text-sm font-medium mb-2">
-              Swap Details
-            </p>
-            <div className="text-xs space-y-1 mb-3">
-              <p>From: {(message.action.data as SwapRoute).fromAmount} {(message.action.data as SwapRoute).fromToken}</p>
-              <p>To: {(message.action.data as SwapRoute).expectedOutput} {(message.action.data as SwapRoute).toToken}</p>
-              <p>Via: {(message.action.data as SwapRoute).protocol || (message.action.data as SwapRoute).dex}</p>
-              <p>Price Impact: {(message.action.data as SwapRoute).priceImpact}%</p>
-              
-              {isTestnet && (
-                <div className="mt-2 p-2 bg-yellow-50 border border-yellow-200 rounded-md">
-                  <p className="font-medium text-yellow-700">⚠️ Testnet Mode</p>
-                  {isLoadingTestnetRate ? (
-                    <p className="text-yellow-600">Loading testnet rate...</p>
-                  ) : (
-                    <p className="text-yellow-600">
-                      Expected testnet output: {testnetOutput} {(message.action.data as SwapRoute).toToken}
-                    </p>
-                  )}
-                  <p className="text-xs text-yellow-500 mt-1">
-                    Testnet prices differ from real-world values
-                  </p>
+    <div 
+      className={`flex ${isUser ? 'justify-end' : 'justify-start'} mb-4`}
+      onMouseEnter={() => setShowActions(true)}
+      onMouseLeave={() => setShowActions(false)}
+    >
+      <div className={`max-w-[85%] md:max-w-[75%] flex ${isUser ? 'flex-row-reverse' : 'flex-row'} items-start gap-3`}>
+        {/* Avatar */}
+        <div className={`flex-shrink-0 ${isUser ? 'ml-2' : 'mr-2'}`}>
+          <div className={`h-8 w-8 rounded-full flex items-center justify-center ${
+            isUser 
+              ? 'bg-blue-900/50 text-blue-400 border border-blue-700' 
+              : 'bg-purple-900/50 text-purple-400 border border-purple-700'
+          }`}>
+            {isUser ? (
+              <UserIcon className="h-5 w-5" />
+            ) : (
+              <SparklesIcon className="h-5 w-5" />
+            )}
                 </div>
-              )}
             </div>
             
-            {message.action.actionable && (
-              <div className="mt-2">
-                {!txStatus && (
+        {/* Message content */}
+        <div className={`relative ${
+          isUser 
+            ? 'bg-blue-900/30 border border-blue-800/50' 
+            : 'bg-gray-800/70 border border-gray-700/50'
+        } rounded-xl px-4 py-3 shadow-md`}>
+          {/* Message actions */}
+          {showActions && (
+            <div className={`absolute ${isUser ? 'left-0' : 'right-0'} -top-4 opacity-70 hover:opacity-100`}>
                   <button
-                    onClick={() => executeSwap(message.action?.data as SwapRoute)}
-                    disabled={isExecuting || !connected}
-                    className="w-full py-2 px-3 bg-blue-500 hover:bg-blue-600 text-white rounded-md text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                  >
-                    {isExecuting ? 'Preparing Transaction...' : 'Execute Swap'}
+                onClick={copyToClipboard}
+                className="p-1 rounded-md bg-gray-800 text-gray-400 hover:text-gray-200"
+                title="Copy message"
+              >
+                {copied ? <CheckIcon className="h-3 w-3" /> : <ClipboardIcon className="h-3 w-3" />}
                   </button>
-                )}
-                
-                {txStatus === 'pending' && (
-                  <div className="text-center py-2 text-sm">
-                    <p className="text-blue-600 animate-pulse">Transaction in progress...</p>
                   </div>
                 )}
                 
-                {txStatus === 'success' && txHash && (
-                  <div className="text-center py-2 text-sm">
-                    <p className="text-green-600 mb-1">Transaction successful!</p>
-                    <a 
-                      href={`https://explorer.aptoslabs.com/txn/${txHash}?network=${isTestnet ? 'testnet' : 'mainnet'}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-blue-500 hover:underline"
-                    >
-                      View on Explorer
-                    </a>
+          {/* Message text */}
+          <div className="prose prose-invert max-w-none">
+            <ReactMarkdown components={components}>
+              {message.content}
+            </ReactMarkdown>
+                  </div>
+          
+          {/* Action buttons (for swap, etc.) */}
+          {message.action && message.action.actionable && (
+            <div className="mt-3 pt-3 border-t border-gray-700">
+              <button
+                onClick={handleActionClick}
+                className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-sm font-medium transition-colors flex items-center justify-center w-full md:w-auto"
+              >
+                <span className="mr-2">{message.action.actionText || 'Execute Action'}</span>
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 5l7 7m0 0l-7 7m7-7H3" />
+                </svg>
+              </button>
                   </div>
                 )}
                 
-                {txStatus === 'error' && (
-                  <div className="text-center py-2 text-sm">
-                    <p className="text-red-600 mb-1">Transaction failed</p>
-                    {errorMessage && <p className="text-xs text-red-500">{errorMessage}</p>}
-                  </div>
-                )}
-                
-                {!connected && !txStatus && (
-                  <p className="text-xs text-red-500 mt-1">Please connect your wallet to execute this swap</p>
-                )}
+          {/* Message timestamp - only rendered client-side */}
+          {timestamp && (
+            <div className={`text-xs text-gray-500 mt-1 text-right`}>
+              {timestamp}
               </div>
             )}
           </div>
-        )}
       </div>
     </div>
   );

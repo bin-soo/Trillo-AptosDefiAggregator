@@ -1,40 +1,89 @@
 'use client';
 
-import { useChat } from 'ai/react';
+import { useChat, Message } from 'ai/react';
 import { useState, useEffect, useRef } from 'react';
-import ChatMessage from '@/components/ChatMessage';
-import ChatInput from '@/components/ChatInput';
-import WalletConnect from '@/components/WalletConnect';
-import Sidebar from '@/components/Sidebar';
-import QuickActions from '@/components/QuickActions';
-import { Bars3Icon, ArrowPathIcon, ChartBarIcon, ChatBubbleLeftRightIcon } from '@heroicons/react/24/outline';
-import FloatingSuggestions from '@/components/FloatingSuggestions';
-import { APTOS_COLORS, APTOS_BRAND } from '@/constants/brand';
-import AptosLogo from '@/components/AptosLogo';
+import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import { useWallet } from '@aptos-labs/wallet-adapter-react';
 import { useNetwork } from './providers';
+import { useSearchParams, useRouter } from 'next/navigation';
+import { CommandLineIcon, ChartBarIcon, CodeBracketIcon, Bars3Icon } from '@heroicons/react/24/outline';
+import { SparklesIcon } from '@heroicons/react/24/solid';
+import AptosLogo from '@/components/AptosLogo';
+import WalletConnect from '@/components/WalletConnect';
 import { SwapRoute, DeFiAction } from '@/types/defi';
+import { TokenType } from '@/services/constants';
 import defiService from '@/services/defiService';
-import MarketDashboard from '@/components/MarketDashboard';
-import MarketAnalysis from '@/components/MarketAnalysis';
+
+// Dynamically import components that might cause hydration issues
+const ChatMessage = dynamic(() => import('@/components/ChatMessage'), { ssr: false });
+const ChatInput = dynamic(() => import('@/components/ChatInput'), { ssr: false });
+const Sidebar = dynamic(() => import('@/components/Sidebar'), { ssr: false });
+const QuickActions = dynamic(() => import('@/components/QuickActions'), { ssr: false });
+const FloatingSuggestions = dynamic(() => import('@/components/FloatingSuggestions'), { ssr: false });
+
+// Define a custom message type that includes action
+interface CustomMessage extends Message {
+  action?: DeFiAction;
+}
 
 export default function Home() {
-  const { messages, input, handleInputChange, handleSubmit, setInput, setMessages } = useChat();
+  const { messages: aiMessages, input, handleInputChange, handleSubmit, setInput, setMessages: setAiMessages } = useChat();
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [chatHistory, setChatHistory] = useState<Array<{ id: string; question: string; timestamp: Date }>>([]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const { connected, account } = useWallet();
   const { network, setNetwork, isTestnet } = useNetwork();
-  const [activeView, setActiveView] = useState<'chat' | 'dashboard'>('dashboard'); // Default to dashboard view
+  const [isProcessing, setIsProcessing] = useState(false);
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const [isMounted, setIsMounted] = useState(false);
+  
+  // Set mounted state on client-side only
+  useEffect(() => {
+    setIsMounted(true);
+  }, []);
+  
+  // Cast messages to our custom type
+  const messages = aiMessages as CustomMessage[];
+  
+  // Type-safe setter for messages
+  const setMessages = (messagesOrUpdater: CustomMessage[] | ((messages: CustomMessage[]) => CustomMessage[])) => {
+    if (typeof messagesOrUpdater === 'function') {
+      setAiMessages(messagesOrUpdater as any);
+    } else {
+      setAiMessages(messagesOrUpdater);
+    }
+  };
+
+  // Check for query parameter on initial load
+  useEffect(() => {
+    if (!isMounted) return;
+    
+    const query = searchParams.get('query');
+    if (query) {
+      // Submit the query automatically
+      const event = new Event('submit') as any;
+      handleInputChange({ target: { value: query } } as any);
+      setTimeout(() => {
+        handleSubmit(event);
+        // Clear the query parameter from URL to prevent resubmission on refresh
+        router.replace('/');
+      }, 500);
+    }
+  }, [searchParams, handleInputChange, handleSubmit, router, isMounted]);
 
   // Scroll to bottom of messages
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
+    if (isMounted) {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [messages, isMounted]);
 
   // Update chat history when new user message is added
   useEffect(() => {
+    if (!isMounted) return;
+    
     const userMessages = messages.filter(msg => msg.role === 'user');
     if (userMessages.length > 0) {
       const lastUserMessage = userMessages[userMessages.length - 1];
@@ -43,11 +92,11 @@ export default function Home() {
         {
           id: lastUserMessage.id,
           question: lastUserMessage.content,
-        timestamp: new Date()
+          timestamp: new Date()
         }
       ]);
     }
-  }, [messages]);
+  }, [messages, isMounted]);
 
   // Toggle sidebar
   const toggleSidebar = () => {
@@ -86,48 +135,32 @@ export default function Home() {
     
     if (match) {
       const [_, amount, tokenIn, tokenOut] = match;
-      console.log(`Detected swap intent: ${amount} ${tokenIn} to ${tokenOut}`);
-      return { amount, tokenIn, tokenOut };
-    }
-    
-    // Try more flexible pattern matching
-    const tokenRegex = /(\w+)\s+(?:to|for)\s+(\w+)/i;
-    const amountRegex = /(\d+(?:\.\d+)?)\s+(\w+)/i;
-    
-    const tokenMatch = message.match(tokenRegex);
-    const amountMatch = message.match(amountRegex);
-    
-    if (tokenMatch && amountMatch && message.toLowerCase().includes('swap')) {
-      const [_, tokenInFromAmount, tokenInFromToken] = amountMatch;
-      const [__, tokenInFromPair, tokenOutFromPair] = tokenMatch;
       
-      // Determine which token is which
-      let finalTokenIn, finalTokenOut, finalAmount;
+      // Validate tokens
+      const validTokens: TokenType[] = ['APT', 'USDC', 'USDT', 'DAI'];
+      const normalizedTokenIn = tokenIn.toUpperCase() as TokenType;
+      const normalizedTokenOut = tokenOut.toUpperCase() as TokenType;
       
-      if (tokenInFromToken.toUpperCase() === tokenInFromPair.toUpperCase()) {
-        finalTokenIn = tokenInFromToken.toUpperCase();
-        finalTokenOut = tokenOutFromPair.toUpperCase();
-        finalAmount = tokenInFromAmount;
-      } else {
-        finalTokenIn = tokenInFromPair.toUpperCase();
-        finalTokenOut = tokenOutFromPair.toUpperCase();
-        finalAmount = tokenInFromAmount;
+      if (!validTokens.includes(normalizedTokenIn) || !validTokens.includes(normalizedTokenOut)) {
+        return { isSwapIntent: false };
       }
       
-      console.log(`Detected flexible swap intent: ${finalAmount} ${finalTokenIn} to ${finalTokenOut}`);
-      return { amount: finalAmount, tokenIn: finalTokenIn, tokenOut: finalTokenOut };
+      return {
+        isSwapIntent: true, 
+        tokenIn: normalizedTokenIn, 
+        tokenOut: normalizedTokenOut, 
+        amount 
+      };
     }
     
-    return null;
+    return { isSwapIntent: false };
   };
 
   // Handle swap intent
   const handleSwapIntent = async (userMessage: string) => {
-    const swapParams = await detectSwapIntent(userMessage);
+    const { isSwapIntent, tokenIn = 'APT', tokenOut = 'USDC', amount = '1' } = await detectSwapIntent(userMessage);
     
-    if (swapParams) {
-      const { amount, tokenIn, tokenOut } = swapParams;
-      
+    if (isSwapIntent) {
       // Add a temporary message while fetching the swap route
       const tempMessageId = Date.now().toString();
       setMessages(prev => [
@@ -141,33 +174,39 @@ export default function Home() {
       
       try {
         // Get the best swap route
-        const swapRoute = await defiService.getBestSwapRoute(
-          tokenIn as any,
-          tokenOut as any,
+        const route = await defiService.getBestSwapRoute(
+          tokenIn as TokenType,
+          tokenOut as TokenType,
           amount
         );
-        
-        console.log('Swap route:', swapRoute);
         
         // Create a swap action
         const swapAction: DeFiAction = {
           type: 'swap',
-          data: swapRoute,
+          data: route,
           actionable: true,
           actionText: 'Execute Swap'
         };
         
         // Format the response
         const responseContent = `I found the best route to swap ${amount} ${tokenIn} to ${tokenOut}:
-        
-• Expected output: ${swapRoute.expectedOutput} ${tokenOut}
-• Best DEX: ${swapRoute.protocol || swapRoute.dex}
-• Price impact: ${swapRoute.priceImpact}%
-• Estimated gas: ${swapRoute.estimatedGas}
 
-Would you like me to execute this swap for you?`;
+## Best Swap Route
+• **Exchange**: ${route.dex || route.protocol}
+• **Expected Output**: ${route.expectedOutput} ${tokenOut}
+• **Price Impact**: ${route.priceImpact}%
+• **Estimated Gas**: ${route.estimatedGas} APT
+
+${route.alternativeRoutes && route.alternativeRoutes.length > 0 ? `
+## Alternative Routes
+${route.alternativeRoutes.map(alt => 
+  `• **${alt.protocol}**: ${alt.expectedOutput} ${tokenOut} (Impact: ${alt.priceImpact})`
+).join('\n')}
+` : ''}
+
+Would you like me to execute this swap for you? Click the "Execute Swap" button below or reply with "yes" to confirm.`;
         
-        // Update the temporary message with the actual response
+        // Update the temporary message with the actual response and attach the action
         setMessages(messages => 
           messages.map(msg => 
             msg.id === tempMessageId 
@@ -196,7 +235,7 @@ Would you like me to execute this swap for you?`;
 
   // Handle swap confirmation
   const handleSwapConfirmation = async (userMessage: string) => {
-    const confirmationRegex = /yes|confirm|execute|proceed|go ahead|swap it|do it/i;
+    const confirmationRegex = /yes|confirm|execute|proceed|do it|swap it/i;
     if (confirmationRegex.test(userMessage)) {
       // Find the last swap action
       const lastSwapAction = [...messages]
@@ -213,7 +252,7 @@ Would you like me to execute this swap for you?`;
           {
             id: confirmationId,
             role: 'assistant',
-            content: `I'll execute the swap of ${route.fromAmount} ${route.fromToken} to ${route.toToken} for you now.`
+            content: `I'll execute the swap of ${route.amount || route.fromAmount} ${route.tokenIn?.symbol || route.fromToken} to ${route.tokenOut?.symbol || route.toToken} for you now.`
           }
         ]);
         
@@ -224,47 +263,70 @@ Would you like me to execute this swap for you?`;
             {
               id: Date.now().toString(),
               role: 'assistant',
-              content: 'Please connect your wallet first to execute the swap.'
+              content: 'Please connect your wallet first to execute the swap. Click the "Connect Wallet" button in the top right corner.'
             }
           ]);
           return true;
         }
         
         try {
+          setIsProcessing(true);
+          
+          // Log the route data for debugging
+          console.log('Executing swap with route:', route);
+          
           // Execute the swap
           const result = await defiService.executeSwap(
-            account.address,
-            route.fromToken as any,
-            route.toToken as any,
-            route.fromAmount,
-            0.5, // Default slippage
-            20 * 60 // Default deadline (20 minutes)
+            account.address.toString(),
+            route.tokenIn?.symbol as TokenType || route.fromToken as TokenType,
+            route.tokenOut?.symbol as TokenType || route.toToken as TokenType,
+            route.amount || route.fromAmount,
+            0.5, // 0.5% slippage
+            20 * 60 // 20 minutes deadline
           );
           
-          if (!result.success) {
-            throw new Error(result.error || 'Failed to execute swap');
-          }
+          setIsProcessing(false);
           
-          // Update with transaction pending message
-          setMessages(messages => [
-            ...messages,
+          if (result.success) {
+            // Update with success message
+            setMessages(prev => [
+              ...prev,
             {
               id: Date.now().toString(),
               role: 'assistant',
-              content: `Transaction prepared and ready to sign. Please check your wallet for confirmation.`
-            }
-          ]);
-          
+                content: `✅ Swap transaction submitted successfully!
+
+**Transaction Hash**: ${result.txHash}
+
+You can view your transaction on the [Aptos Explorer](https://explorer.aptoslabs.com/txn/${result.txHash}?network=${isTestnet ? 'testnet' : 'mainnet'}).
+
+The swap of ${route.amount || route.fromAmount} ${route.tokenIn?.symbol || route.fromToken} to approximately ${route.expectedOutput} ${route.tokenOut?.symbol || route.toToken} should be completed shortly.`
+              }
+            ]);
+          } else {
+            // Update with error message
+            setMessages(prev => [
+              ...prev,
+              {
+                id: Date.now().toString(),
+                role: 'assistant',
+                content: `❌ There was an error executing the swap: ${result.error || 'Unknown error'}.
+
+Please try again or adjust your swap parameters.`
+              }
+            ]);
+          }
         } catch (error) {
+          setIsProcessing(false);
           console.error('Error executing swap:', error);
           
           // Update with error message
-          setMessages(messages => [
-            ...messages,
+          setMessages(prev => [
+            ...prev,
             {
               id: Date.now().toString(),
               role: 'assistant',
-              content: `Sorry, there was an error executing the swap: ${error instanceof Error ? error.message : 'Unknown error'}.
+              content: `❌ Sorry, there was an error executing the swap: ${error instanceof Error ? error.message : 'Unknown error'}.
               
 Please try again or adjust your swap parameters.`
             }
@@ -280,13 +342,13 @@ Please try again or adjust your swap parameters.`
 
   // Detect portfolio analysis intent
   const detectPortfolioIntent = async (message: string) => {
-    const portfolioRegex = /portfolio|holdings|assets|balance|analyze my/i;
-    return portfolioRegex.test(message);
+    const portfolioRegex = /portfolio|holdings|assets|balance|analyze my wallet/i;
+    return { isPortfolioIntent: portfolioRegex.test(message) };
   };
 
   // Handle portfolio analysis intent
   const handlePortfolioIntent = async (userMessage: string) => {
-    const isPortfolioIntent = await detectPortfolioIntent(userMessage);
+    const { isPortfolioIntent } = await detectPortfolioIntent(userMessage);
     
     if (isPortfolioIntent) {
       // Check if wallet is connected
@@ -315,27 +377,24 @@ Please try again or adjust your swap parameters.`
       
       try {
         // In a real implementation, you would fetch the user's portfolio data here
-        // For now, we'll simulate a portfolio analysis
-        
-        // Simulate some delay for the analysis
-        await new Promise(resolve => setTimeout(resolve, 1500));
+        // For now, we'll use a mock response
         
         // Format the response
-        const responseContent = `## Portfolio Analysis
-
-Based on your wallet at ${account.address.slice(0, 6)}...${account.address.slice(-4)}, here's my analysis:
+        const responseContent = `## Portfolio Analysis for ${account.address.slice(0, 6)}...${account.address.slice(-4)}
 
 ### Current Holdings
-• 10.5 APT ($63.00)
-• 120 USDC ($120.00)
-• 0.5 BTC ($25,000.00)
+• **APT**: 10.5 ($${(10.5 * 8.75).toFixed(2)})
+• **USDC**: 250.00 ($250.00)
+• **USDT**: 100.00 ($100.00)
+
+### Total Value: $441.88
 
 ### Recommendations
-• Your portfolio is heavily weighted towards BTC (98.5%). Consider diversifying.
-• APT has shown strong momentum recently. Consider increasing your position.
-• There's a good yield opportunity for your USDC on Aries Markets (5.2% APY).
+1. **Diversification**: Your portfolio is heavily weighted towards APT (73%). Consider diversifying into other assets.
+2. **Yield Opportunities**: Your USDC could earn up to 5.2% APY on Aries Markets.
+3. **Risk Management**: Consider setting stop-loss orders for your APT position.
 
-Would you like more specific recommendations for rebalancing?`;
+Would you like me to suggest specific actions to optimize your portfolio?`;
         
         // Update the temporary message with the actual response
         setMessages(messages => 
@@ -366,29 +425,24 @@ Would you like more specific recommendations for rebalancing?`;
 
   // Detect yield opportunities intent
   const detectYieldIntent = async (message: string) => {
-    const yieldRegex = /yield|apy|interest|lending|staking|earn|best rate/i;
-    const match = message.match(yieldRegex);
+    const yieldRegex = /yield|apy|interest|lending|staking|earn/i;
+    const tokenRegex = /(APT|USDC|USDT|DAI)/i;
+    const amountRegex = /(\d+(?:\.\d+)?)/;
     
-    if (match) {
-      // Try to extract token and amount
-      const tokenRegex = /(\w+)\s+(?:yield|apy|interest|lending|staking|earn|rate)/i;
-      const amountRegex = /(\d+(?:\.\d+)?)\s+(\w+)/i;
+    if (yieldRegex.test(message)) {
+      let token = 'USDC';
+      let amount = '100';
       
+      // Extract token if present
       const tokenMatch = message.match(tokenRegex);
-      const amountMatch = message.match(amountRegex);
-      
-      let token = 'USDC'; // Default token
-      let amount = '100'; // Default amount
-      
-      if (tokenMatch && tokenMatch[1]) {
+      if (tokenMatch) {
         token = tokenMatch[1].toUpperCase();
       }
       
+      // Extract amount if present
+      const amountMatch = message.match(amountRegex);
       if (amountMatch) {
         amount = amountMatch[1];
-        if (amountMatch[2]) {
-          token = amountMatch[2].toUpperCase();
-        }
       }
       
       return { isYieldIntent: true, token, amount };
@@ -430,9 +484,11 @@ ${opportunities.liquidity.slice(0, 3).map(pool =>
   `• **${pool.protocol}** ${pool.tokens.join('-')}: ${pool.apy.total.toFixed(2)}% APY (TVL: $${pool.tvl.total.toLocaleString()})`
 ).join('\n')}
 
-For ${amount} ${token}, the best option is ${opportunities.lending[0]?.protocol || 'Unknown'} with ${opportunities.lending[0]?.apy || '0'}% APY, which would earn you approximately ${(parseFloat(amount) * parseFloat(opportunities.lending[0]?.apy || '0') / 100).toFixed(2)} ${token} per year.
+### Estimated Earnings (Annual)
+• Best Lending: $${(parseFloat(amount) * parseFloat(opportunities.lending[0]?.apy || '0') / 100).toFixed(2)}
+• Best LP: $${(parseFloat(amount) * opportunities.liquidity[0]?.apy.total / 100).toFixed(2)}
 
-Would you like more details on any specific protocol?`;
+Would you like me to explain more about any specific opportunity?`;
         
         // Update the temporary message with the actual response
         setMessages(messages => 
@@ -463,11 +519,17 @@ Would you like more details on any specific protocol?`;
 
   // Handle quick action
   const handleQuickAction = async (query: string) => {
-    setInput(query);
+    // If the query is different from the current input, update the input
+    // This handles QuickActions component clicks
+    if (query !== input) {
+      setInput(query);
+    }
     
-    // Submit the form programmatically
-    const fakeEvent = { preventDefault: () => {} } as React.FormEvent<HTMLFormElement>;
-    await handleSubmitWithIntentDetection(fakeEvent);
+    // Create a form submit event and pass it to handleSubmitWithIntentDetection
+    const event = new Event('submit', { cancelable: true }) as any;
+    setTimeout(() => {
+      handleSubmitWithIntentDetection(event);
+    }, 100); // Small delay to ensure input is updated
   };
 
   // Handle form submission with intent detection
@@ -496,55 +558,250 @@ Would you like more details on any specific protocol?`;
     // If no specific intent was detected, the default AI response will be used
   };
 
-  return (
-    <main className="flex min-h-screen flex-col">
-      {/* Header */}
-      <header className="sticky top-0 z-10 bg-white/80 backdrop-blur-md border-b border-gray-200">
-        <div className="container mx-auto px-4 py-3 flex justify-between items-center">
-          <div className="flex items-center space-x-4">
-            <button
-              onClick={toggleSidebar}
-              className="p-2 rounded-lg hover:bg-gray-100"
-            >
-              <Bars3Icon className="h-6 w-6 text-gray-700" />
-            </button>
-            <Link href="/" className="flex items-center space-x-2">
-              <AptosLogo />
-              <span className="font-semibold text-xl">DeFi AI Advisor</span>
-            </Link>
+  // Show a loading state during SSR or before client hydration
+  if (!isMounted) {
+    return (
+      <div className="flex min-h-screen flex-col bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 text-white relative overflow-hidden">
+        {/* Tech background elements */}
+        <div className="absolute inset-0 overflow-hidden pointer-events-none">
+          {/* Grid pattern */}
+          <div className="absolute inset-0 opacity-5">
+            <div className="h-full w-full bg-[linear-gradient(to_right,#8B5CF680_1px,transparent_1px),linear-gradient(to_bottom,#8B5CF680_1px,transparent_1px)]" 
+                 style={{ backgroundSize: '40px 40px' }}>
+            </div>
           </div>
           
-          <div className="flex items-center space-x-3">
-            <button
-              onClick={() => setActiveView('dashboard')}
-              className={`p-2 rounded-lg ${activeView === 'dashboard' ? 'bg-blue-100 text-blue-700' : 'hover:bg-gray-100 text-gray-700'}`}
-              title="Market Dashboard"
-            >
-              <ChartBarIcon className="h-6 w-6" />
-            </button>
-            <button
-              onClick={() => setActiveView('chat')}
-              className={`p-2 rounded-lg ${activeView === 'chat' ? 'bg-blue-100 text-blue-700' : 'hover:bg-gray-100 text-gray-700'}`}
-              title="AI Chat"
-            >
-              <ChatBubbleLeftRightIcon className="h-6 w-6" />
-            </button>
-            <button
-              onClick={toggleNetwork}
-              className={`px-3 py-1 rounded-lg text-sm font-medium ${
-                isTestnet 
-                  ? 'bg-yellow-100 text-yellow-800 hover:bg-yellow-200' 
-                  : 'bg-green-100 text-green-800 hover:bg-green-200'
-              }`}
-            >
-              {isTestnet ? 'Testnet' : 'Mainnet'}
-            </button>
-            <WalletConnect onConnect={() => {}} />
+          {/* Floating elements */}
+          <div className="absolute top-20 left-10 w-32 h-32 rounded-full border border-blue-500/20 animate-pulse-slow"></div>
+          <div className="absolute bottom-20 right-10 w-48 h-48 rounded-full border border-purple-500/20 animate-pulse-slow" 
+               style={{ animationDelay: '1s' }}></div>
+          <div className="absolute top-1/3 right-1/4 w-24 h-24 rounded-full border border-blue-500/20 animate-pulse-slow"
+               style={{ animationDelay: '2s' }}></div>
+               
+          {/* Tech circles */}
+          <div className="absolute -top-20 -left-20 w-80 h-80 rounded-full bg-blue-500/5"></div>
+          <div className="absolute -bottom-40 -right-20 w-96 h-96 rounded-full bg-purple-500/5"></div>
+          
+          {/* Code-like elements */}
+          <div className="absolute top-1/4 left-8 text-blue-500/10 text-xs font-mono">
+            {Array.from({ length: 10 }).map((_, i) => (
+              <div key={i} className="my-1">{'{'}aptos::move::module{'}'}::{i + 1}</div>
+            ))}
+          </div>
+          <div className="absolute bottom-1/4 right-8 text-purple-500/10 text-xs font-mono">
+            {Array.from({ length: 10 }).map((_, i) => (
+              <div key={i} className="my-1">fn defi_aggregator::{i + 1}() {'{'} ... {'}'}</div>
+            ))}
           </div>
         </div>
-      </header>
 
-      {/* Sidebar */}
+        {/* Sidebar for chat history and resources */}
+        <Sidebar
+          chatHistory={chatHistory}
+          onHistoryClick={handleHistoryClick}
+          isOpen={isSidebarOpen}
+          onToggle={toggleSidebar}
+        />
+
+        {/* Main content */}
+        <div className="flex flex-col h-screen">
+          {/* Header */}
+          <header className="sticky top-0 z-10 backdrop-blur-md border-b border-gray-700 bg-black/30">
+            <div className="container mx-auto px-4 py-3 flex justify-between items-center">
+              <div className="flex items-center space-x-4">
+                <button onClick={toggleSidebar} className="p-2 rounded-lg hover:bg-gray-700 text-gray-300">
+                  <CommandLineIcon className="h-6 w-6" />
+                </button>
+                <div className="flex items-center space-x-2">
+                  <AptosLogo />
+                  <span className="font-mono text-xl text-blue-400">DeFi.AI</span>
+                </div>
+              </div>
+              
+              <div className="flex items-center space-x-3">
+                <Link 
+                  href="/swap"
+                  className="p-2 rounded-lg hover:bg-gray-700 text-gray-300 flex items-center space-x-1"
+                  title="Swap Tokens"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4" />
+                  </svg>
+                  <span className="hidden md:inline text-sm">Swap</span>
+                </Link>
+                <Link 
+                  href="/market"
+                  className="p-2 rounded-lg hover:bg-gray-700 text-gray-300 flex items-center space-x-1"
+                  title="Market Dashboard"
+                >
+                  <ChartBarIcon className="h-5 w-5" />
+                  <span className="hidden md:inline text-sm">Markets</span>
+                </Link>
+                <button 
+                  onClick={toggleNetwork}
+                  className={`px-3 py-1 rounded-lg text-sm font-mono ${
+                    isTestnet 
+                      ? 'bg-yellow-900/50 text-yellow-400 border border-yellow-700' 
+                      : 'bg-green-900/50 text-green-400 border border-green-700'
+                  }`}
+                >
+                  {isTestnet ? 'TESTNET' : 'MAINNET'}
+                </button>
+                <WalletConnect onConnect={() => {}} />
+              </div>
+            </div>
+          </header>
+
+          {/* Chat container - centered with max-width */}
+          <div className="flex-1 overflow-hidden flex flex-col items-center">
+            <div className="w-full max-w-4xl px-4 flex-1 flex flex-col">
+              {messages.length === 0 ? (
+              <div className="flex-1 flex flex-col items-center justify-center p-4">
+                <div className="max-w-2xl w-full space-y-8">
+                  <div className="text-center">
+                    <div className="flex justify-center mb-6">
+                      <div className="h-16 w-16 rounded-full bg-blue-500/20 flex items-center justify-center">
+                        <SparklesIcon className="h-8 w-8 text-blue-400" />
+                      </div>
+                    </div>
+                    <h1 className="text-3xl font-bold text-blue-300 mb-2">Aptos DeFi AI Assistant</h1>
+                    <p className="text-gray-400 max-w-md mx-auto">
+                      Your AI-powered guide to navigating the Aptos DeFi ecosystem. Ask about swaps, yields, market analysis, and more.
+                    </p>
+                  </div>
+                  
+                  <QuickActions onActionClick={handleQuickAction} />
+                  
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div className="p-4 rounded-xl bg-gray-800/50 border border-gray-700">
+                      <h3 className="text-lg font-medium text-blue-300 mb-2 flex items-center">
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4" />
+                        </svg>
+                        Swap Tokens
+                      </h3>
+                      <p className="text-gray-400 text-sm mb-3">
+                        Find the best rates across DEXes and execute trades with minimal slippage.
+                      </p>
+                      <Link 
+                        href="/swap"
+                        className="text-sm text-blue-400 hover:text-blue-300"
+                      >
+                        Go to swap page →
+                      </Link>
+                    </div>
+                    
+                    <div className="p-4 rounded-xl bg-gray-800/50 border border-gray-700">
+                      <h3 className="text-lg font-medium text-blue-300 mb-2 flex items-center">
+                        <CodeBracketIcon className="h-5 w-5 mr-2" />
+                        Developer Mode
+                      </h3>
+                      <p className="text-gray-400 text-sm mb-3">
+                        Access technical details, smart contract interactions, and developer resources.
+                      </p>
+                      <button 
+                        onClick={() => handleQuickAction("Show me the technical architecture of Aptos DeFi protocols")}
+                        className="text-sm text-blue-400 hover:text-blue-300"
+                      >
+                        Explore technical docs →
+                      </button>
+                    </div>
+                    
+                    <div className="p-4 rounded-xl bg-gray-800/50 border border-gray-700">
+                      <h3 className="text-lg font-medium text-blue-300 mb-2 flex items-center">
+                        <ChartBarIcon className="h-5 w-5 mr-2" />
+                        Market Analysis
+                      </h3>
+                      <p className="text-gray-400 text-sm mb-3">
+                        Get AI-powered insights on market trends, price predictions, and investment strategies.
+                      </p>
+                      <Link 
+                        href="/market"
+                        className="text-sm text-blue-400 hover:text-blue-300"
+                      >
+                        View market dashboard →
+                      </Link>
+                    </div>
+                  </div>
+                </div>
+                </div>
+              ) : (
+              <div ref={messagesEndRef} className="flex-1 overflow-y-auto py-4 space-y-4">
+                {messages.map(message => (
+                  <ChatMessage key={message.id} message={message} />
+                ))}
+                </div>
+              )}
+            
+              {/* Floating suggestions */}
+              {messages.length > 0 && (
+                <div className="py-2">
+                <FloatingSuggestions 
+                  onActionClick={handleQuickAction}
+                  currentQuery={input}
+                  setInputText={setInput}
+                />
+              </div>
+              )}
+            </div>
+            
+            {/* Chat input - full width but content is centered */}
+            <div className="w-full p-4 border-t border-gray-700 bg-gray-800/50 backdrop-blur-md">
+              <div className="max-w-4xl mx-auto">
+                {isMounted && (
+                  <form onSubmit={handleSubmitWithIntentDetection}>
+                  <ChatInput
+                    input={input}
+                    handleInputChange={handleInputChange}
+                    handleSubmit={handleSubmitWithIntentDetection}
+                    isConnected={connected}
+                  />
+                  </form>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <main className="flex min-h-screen flex-col bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 text-white relative overflow-hidden">
+      {/* Tech background elements */}
+      <div className="absolute inset-0 overflow-hidden pointer-events-none">
+        {/* Grid pattern */}
+        <div className="absolute inset-0 opacity-5">
+          <div className="h-full w-full bg-[linear-gradient(to_right,#8B5CF680_1px,transparent_1px),linear-gradient(to_bottom,#8B5CF680_1px,transparent_1px)]" 
+               style={{ backgroundSize: '40px 40px' }}>
+          </div>
+        </div>
+        
+        {/* Floating elements */}
+        <div className="absolute top-20 left-10 w-32 h-32 rounded-full border border-blue-500/20 animate-pulse-slow"></div>
+        <div className="absolute bottom-20 right-10 w-48 h-48 rounded-full border border-purple-500/20 animate-pulse-slow" 
+             style={{ animationDelay: '1s' }}></div>
+        <div className="absolute top-1/3 right-1/4 w-24 h-24 rounded-full border border-blue-500/20 animate-pulse-slow"
+             style={{ animationDelay: '2s' }}></div>
+             
+        {/* Tech circles */}
+        <div className="absolute -top-20 -left-20 w-80 h-80 rounded-full bg-blue-500/5"></div>
+        <div className="absolute -bottom-40 -right-20 w-96 h-96 rounded-full bg-purple-500/5"></div>
+        
+        {/* Code-like elements */}
+        <div className="absolute top-1/4 left-8 text-blue-500/10 text-xs font-mono">
+          {Array.from({ length: 10 }).map((_, i) => (
+            <div key={i} className="my-1">{'{'}aptos::move::module{'}'}::{i + 1}</div>
+          ))}
+        </div>
+        <div className="absolute bottom-1/4 right-8 text-purple-500/10 text-xs font-mono">
+          {Array.from({ length: 10 }).map((_, i) => (
+            <div key={i} className="my-1">fn defi_aggregator::{i + 1}() {'{'} ... {'}'}</div>
+          ))}
+        </div>
+      </div>
+
+      {/* Sidebar for chat history and resources */}
       <Sidebar
         chatHistory={chatHistory}
         onHistoryClick={handleHistoryClick}
@@ -553,44 +810,130 @@ Would you like more details on any specific protocol?`;
       />
 
       {/* Main content */}
-      <div className="flex-1 container mx-auto px-4 py-6">
-        {activeView === 'dashboard' ? (
-          <div className="space-y-6">
-            <MarketDashboard />
-            <MarketAnalysis onQuerySubmit={handleQuickAction} />
+      <div className="flex flex-col h-screen">
+        {/* Sidebar */}
+        <Sidebar
+          chatHistory={chatHistory}
+          onHistoryClick={handleHistoryClick}
+          isOpen={isSidebarOpen}
+          onToggle={toggleSidebar}
+        />
+
+        {/* Main content */}
+        <div className="flex-1 flex flex-col h-full overflow-hidden">
+        {/* Header */}
+          <div className="border-b border-gray-700 bg-gray-800/50 backdrop-blur-md">
+            <div className="max-w-4xl mx-auto px-4 py-3 flex justify-between items-center">
+              <div className="flex items-center space-x-3">
+              <button
+                  onClick={toggleSidebar}
+                  className="p-2 rounded-lg hover:bg-gray-700 text-gray-300"
+              >
+                <Bars3Icon className="h-6 w-6" />
+              </button>
+                <div className="flex items-center space-x-2">
+                  <AptosLogo />
+                  <span className="font-mono text-xl text-blue-400">DeFi.AI</span>
+                </div>
+            </div>
+              <div className="flex items-center space-x-3">
+              <button 
+                onClick={toggleNetwork}
+                  className={`px-3 py-1 rounded-lg text-sm font-mono ${
+                  isTestnet 
+                      ? 'bg-yellow-900/50 text-yellow-400 border border-yellow-700' 
+                      : 'bg-blue-900/50 text-blue-400 border border-blue-700'
+                }`}
+              >
+                  {isTestnet ? 'TESTNET' : 'MAINNET'}
+              </button>
+                {connected ? (
+                  <div className="flex items-center space-x-2 bg-gray-700/50 px-3 py-1 rounded-lg">
+                    <div className="h-2 w-2 rounded-full bg-green-500"></div>
+                    <span className="text-sm text-gray-300 font-mono">
+                      {account?.address?.toString().slice(0, 6)}...{account?.address?.toString().slice(-4)}
+                    </span>
+                  </div>
+                ) : (
+                  <WalletConnect onConnect={() => {}} />
+                )}
+              </div>
+            </div>
           </div>
-        ) : (
-          <div className="max-w-4xl mx-auto space-y-6">
-            {/* Chat messages */}
-            <div className="space-y-4 mb-6">
+          
+          {/* Chat area with fixed height and scrollable content */}
+          <div className="flex-1 overflow-hidden flex flex-col relative">
+            {/* Background elements */}
+            <div className="absolute inset-0 bg-gradient-to-b from-gray-900 via-gray-800 to-gray-900 -z-10"></div>
+            
+            {/* Grid pattern */}
+            <div className="absolute inset-0 bg-[url('/static/grid-pattern.svg')] bg-repeat opacity-5 -z-10"></div>
+            
+            {/* Floating elements */}
+            <div className="absolute inset-0 overflow-hidden -z-10">
+              <div className="absolute top-1/4 left-1/4 h-64 w-64 rounded-full bg-blue-900/20 blur-3xl"></div>
+              <div className="absolute bottom-1/3 right-1/3 h-64 w-64 rounded-full bg-purple-900/20 blur-3xl"></div>
+            </div>
+            
+            {/* Code-like background elements */}
+            <div className="absolute left-4 top-1/4 text-gray-800/20 font-mono text-xs -z-10">
+              {Array.from({ length: 10 }).map((_, i) => (
+                <div key={i} className="my-1">fn process_message::{i + 1}() {'{'} ... {'}'}</div>
+              ))}
+            </div>
+            
+            {/* Chat messages - make this scrollable with fixed height */}
+            <div className="flex-1 overflow-y-auto px-4 py-4" style={{ scrollbarWidth: 'thin' }}>
+              <div className="max-w-4xl mx-auto">
             {messages.length === 0 ? (
-                <div className="py-8">
+                  <div className="flex flex-col items-center justify-center h-full py-12">
+                    <div className="bg-gray-800/50 backdrop-blur-md border border-gray-700 rounded-xl p-6 max-w-2xl w-full">
+                      <h2 className="text-2xl font-bold text-center text-blue-400 mb-4">Welcome to Aptos DeFi Assistant</h2>
+                      <p className="text-gray-300 text-center mb-6">
+                        Your AI-powered guide to navigating the Aptos DeFi ecosystem. Ask about swaps, yields, market analysis, or anything DeFi related.
+                      </p>
+                      
                 <QuickActions onActionClick={handleQuickAction} />
+                    </div>
               </div>
             ) : (
-                messages.map(message => (
-                  <ChatMessage key={message.id} message={message} />
-                ))
-              )}
-                <div ref={messagesEndRef} />
+                  <div className="space-y-4">
+                {messages.map((message, i) => (
+                  <ChatMessage key={i} message={message} />
+                ))}
               </div>
-
-            {/* Suggestions */}
-            {messages.length > 0 && (
-              <FloatingSuggestions onActionClick={handleQuickAction} currentQuery={input} />
             )}
-
-            {/* Chat input */}
-            <div className="sticky bottom-4 pt-2 pb-4 bg-gradient-to-b from-transparent to-white">
+          </div>
+            </div>
+          
+            {/* Floating suggestions */}
+            {messages.length > 0 && (
+              <div className="py-2">
+            <FloatingSuggestions 
+              onActionClick={handleQuickAction}
+              currentQuery={input}
+                setInputText={setInput}
+            />
+            </div>
+            )}
+          </div>
+          
+          {/* Chat input - full width but content is centered */}
+          <div className="w-full p-4 border-t border-gray-700 bg-gray-800/50 backdrop-blur-md">
+            <div className="max-w-4xl mx-auto">
+              {isMounted && (
+                <form onSubmit={handleSubmitWithIntentDetection}>
               <ChatInput
                 input={input}
                 handleInputChange={handleInputChange}
                 handleSubmit={handleSubmitWithIntentDetection}
-                isConnected={connected}
+                  isConnected={connected}
               />
+                </form>
+              )}
             </div>
           </div>
-        )}
+        </div>
       </div>
     </main>
   );
