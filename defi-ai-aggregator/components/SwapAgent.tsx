@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useWallet } from '@aptos-labs/wallet-adapter-react';
 import { ArrowPathIcon, ChevronDownIcon, ChevronUpIcon } from '@heroicons/react/24/outline';
 import { SwapRoute } from '@/types/defi';
@@ -24,8 +24,9 @@ export default function SwapAgent({
   const { network, isTestnet } = useNetwork();
   
   const [route, setRoute] = useState<SwapRoute | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [isExecuting, setIsExecuting] = useState(false);
   const [txStatus, setTxStatus] = useState<'idle' | 'pending' | 'success' | 'error'>('idle');
   const [txHash, setTxHash] = useState<string | null>(null);
   const [slippage, setSlippage] = useState(0.5); // Default 0.5%
@@ -34,6 +35,8 @@ export default function SwapAgent({
   const [agentMessage, setAgentMessage] = useState('');
   const [showRouteDetails, setShowRouteDetails] = useState(false);
   const [isMounted, setIsMounted] = useState(false);
+  const [logs, setLogs] = useState<string[]>([]);
+  const logsEndRef = useRef<HTMLDivElement>(null);
 
   // Set mounted state to prevent hydration issues
   useEffect(() => {
@@ -43,137 +46,104 @@ export default function SwapAgent({
   // Reset state when network changes
   useEffect(() => {
     setRoute(null);
-    setLoading(false);
+    setIsLoading(true);
     setError(null);
     setTxStatus('idle');
     setTxHash(null);
   }, [network]);
 
-  // Fetch best route when inputs change
+  // Add a log message
+  const addLog = (message: string) => {
+    setLogs(prev => [...prev, `[${new Date().toLocaleTimeString()}] ${message}`]);
+  };
+
+  // Scroll to bottom of logs
   useEffect(() => {
-    if (!isMounted) return;
-    
-    const fetchRoute = async () => {
-      if (!tokenIn || !tokenOut || !amount || parseFloat(amount) <= 0) {
-        return;
-      }
-
-      setLoading(true);
-      setError(null);
-      setAgentThinking(true);
-      setAgentMessage('Analyzing market conditions...');
-
-      try {
-        // Simulate AI thinking with delayed messages
-        const messages = [
-          'Checking liquidity across DEXes...',
-          'Calculating optimal route...',
-          'Estimating price impact...',
-          'Comparing gas costs...',
-          'Finalizing best swap path...'
-        ];
-
-        // Display thinking messages with delays
-        for (let i = 0; i < messages.length; i++) {
-          await new Promise(resolve => setTimeout(resolve, 500));
-          setAgentMessage(messages[i]);
-        }
-
-        // Get the best swap route
-        const bestRoute = await defiService.getBestSwapRoute(
-          tokenIn as any,
-          tokenOut as any,
-          amount
-        );
-
-        setRoute(bestRoute);
-        if (onRouteChange) {
-          onRouteChange(bestRoute);
-        }
-
-        // Set success message
-        setAgentMessage(`Found optimal route via ${bestRoute.protocol || bestRoute.dex} with ${bestRoute.priceImpact}% price impact`);
-        
-        // Auto-execute if enabled
-        if (autoExecute && connected && account) {
-          executeSwap();
-        }
-      } catch (error) {
-        console.error('Error fetching swap route:', error);
-        setError('Failed to find a viable swap route. Please try again or adjust your inputs.');
-        setAgentMessage('I encountered an issue finding a swap route. Please try again.');
-      } finally {
-        setLoading(false);
-        setAgentThinking(false);
-      }
-    };
-
-    fetchRoute();
-  }, [tokenIn, tokenOut, amount, connected, account, autoExecute, network, isMounted]);
-
-  const executeSwap = async () => {
-    if (!connected || !account || !route) {
-      setError('Please connect your wallet and ensure a route is available.');
-      return;
+    if (logsEndRef.current) {
+      logsEndRef.current.scrollIntoView({ behavior: 'smooth' });
     }
+  }, [logs]);
 
-    setTxStatus('pending');
+  // Fetch route when inputs change
+  useEffect(() => {
+    if (tokenIn && tokenOut && amount) {
+      fetchRoute();
+    }
+  }, [tokenIn, tokenOut, amount]);
+
+  // Fetch the best swap route
+  const fetchRoute = async () => {
+    setIsLoading(true);
     setError(null);
-    setAgentMessage('Preparing transaction...');
-
+    addLog(`Searching for optimal swap route: ${amount} ${tokenIn} → ${tokenOut}...`);
+    
     try {
-      // Execute the swap
-      const result = await defiService.executeSwap(
+      const swapService = defiService;
+      swapService.setTestnetMode(isTestnet);
+      
+      const bestRoute = await swapService.getBestSwapRoute(
+        tokenIn as any,
+        tokenOut as any,
+        amount
+      );
+      
+      setRoute(bestRoute);
+      addLog(`Found route via ${bestRoute.dex} with expected output of ${bestRoute.expectedOutput} ${tokenOut}`);
+      
+      // Notify parent component about the route change
+      if (onRouteChange) {
+        onRouteChange(bestRoute);
+      }
+    } catch (error) {
+      console.error('Error fetching swap route:', error);
+      setError('Failed to find a swap route. Please try different tokens or amount.');
+      addLog(`Error: ${error instanceof Error ? error.message : 'Failed to find swap route'}`);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Execute the swap
+  const executeSwap = async () => {
+    if (!route || !connected || !account) return;
+    
+    setIsExecuting(true);
+    addLog(`Preparing swap transaction...`);
+    
+    try {
+      const swapService = defiService;
+      swapService.setTestnetMode(isTestnet);
+      
+      addLog(`Executing swap of ${amount} ${tokenIn} to ${tokenOut}...`);
+      
+      const result = await swapService.executeSwap(
         account.address,
         tokenIn as any,
         tokenOut as any,
         amount,
-        slippage
+        slippage,
+        20 * 60 // 20 minutes deadline
       );
-
-      if (!result.success || !result.payload) {
-        throw new Error(result.error || 'Failed to prepare transaction');
-      }
-
-      setAgentMessage('Waiting for wallet confirmation...');
-
-      // Use the Petra wallet API directly
-      if (!(window as any).aptos) {
-        throw new Error('Petra wallet not found. Please make sure it is installed and connected.');
-      }
-
-      console.log('Transaction payload:', JSON.stringify(result.payload, null, 2));
       
-      // Sign and submit the transaction using Petra wallet
-      try {
-        const pendingTransaction = await (window as any).aptos.signAndSubmitTransaction(result.payload);
-        
-        console.log('Transaction submitted:', pendingTransaction);
-        
-        if (!pendingTransaction || !pendingTransaction.hash) {
-          throw new Error('Transaction rejected or failed');
-        }
-
-        setTxHash(pendingTransaction.hash);
-        setTxStatus('success');
-        setAgentMessage(`Transaction submitted! Swapping ${amount} ${tokenIn} to ${route.expectedOutput} ${tokenOut}`);
-
+      if (result.success) {
+        addLog(`✅ Transaction submitted! Hash: ${result.txHash}`);
         if (onSwapComplete) {
-          onSwapComplete(true, pendingTransaction.hash);
+          onSwapComplete(true, result.txHash);
         }
-      } catch (txError) {
-        console.error('Transaction error:', txError);
-        throw new Error(`Transaction failed: ${txError instanceof Error ? txError.message : String(txError)}`);
+      } else {
+        addLog(`❌ Transaction failed: ${result.error}`);
+        if (onSwapComplete) {
+          onSwapComplete(false);
+        }
       }
     } catch (error) {
-      console.error('Swap execution error:', error);
-      setTxStatus('error');
-      setError(error instanceof Error ? error.message : 'Unknown error executing swap');
-      setAgentMessage('There was an error executing the swap. Please try again.');
-      
+      console.error('Error executing swap:', error);
+      addLog(`❌ Error: ${error instanceof Error ? error.message : 'Unknown error'}`);
       if (onSwapComplete) {
         onSwapComplete(false);
       }
+    } finally {
+      setIsExecuting(false);
     }
   };
 
@@ -183,162 +153,145 @@ export default function SwapAgent({
   }
 
   return (
-    <div className="bg-white rounded-xl shadow-md p-6 border border-gray-200">
-      <div className="flex justify-between items-center mb-4">
-        <h3 className="text-lg font-medium text-gray-900">AI Swap Agent</h3>
-        <div className="text-xs text-gray-500">Powered by Aptos</div>
-      </div>
-
-      {/* Agent Status */}
-      <div className="bg-blue-50 rounded-lg p-4 mb-4 min-h-[80px] flex items-center">
-        {agentThinking ? (
-          <div className="flex items-center">
-            <ArrowPathIcon className="h-5 w-5 text-blue-500 animate-spin mr-2" />
-            <p className="text-blue-700">{agentMessage}</p>
-          </div>
-        ) : error ? (
-          <p className="text-red-600">{error}</p>
-        ) : route ? (
-          <p className="text-blue-700">{agentMessage}</p>
-        ) : (
-          <p className="text-blue-700">Ready to find the best swap route for you.</p>
-        )}
-      </div>
-
-      {/* Route Details */}
-      {route && (
-        <div className="mb-4">
-          <div 
-            className="flex justify-between items-center cursor-pointer hover:bg-gray-50 p-2 rounded-lg"
-            onClick={() => setShowRouteDetails(!showRouteDetails)}
-          >
-            <h4 className="font-medium text-gray-900">Route Details</h4>
-            {showRouteDetails ? (
-              <ChevronUpIcon className="h-5 w-5 text-gray-500" />
-            ) : (
-              <ChevronDownIcon className="h-5 w-5 text-gray-500" />
-            )}
-          </div>
-          
-          {showRouteDetails && (
-            <div className="mt-2 space-y-2 bg-gray-50 p-3 rounded-lg text-sm">
-              <div className="flex justify-between">
-                <span className="text-gray-600">Protocol:</span>
-                <span className="font-medium">{route.protocol || route.dex}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-gray-600">Expected Output:</span>
-                <span className="font-medium">{parseFloat(route.expectedOutput).toFixed(6)} {tokenOut}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-gray-600">Price Impact:</span>
-                <span className={`font-medium ${
-                  parseFloat(route.priceImpact.toString()) > 5 ? 'text-red-600' : 
-                  parseFloat(route.priceImpact.toString()) > 1 ? 'text-yellow-600' : 'text-green-600'
-                }`}>{route.priceImpact}%</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-gray-600">Gas Estimate:</span>
-                <span className="font-medium">{route.estimatedGas} APT</span>
-              </div>
-              
-              {/* Alternative Routes */}
-              {route.alternativeRoutes && route.alternativeRoutes.length > 0 && (
-                <div className="mt-3">
-                  <h5 className="font-medium text-gray-900 mb-2">Alternative Routes:</h5>
-                  <div className="space-y-2">
-                    {route.alternativeRoutes.slice(0, 2).map((alt, i) => (
-                      <div key={i} className="bg-white p-2 rounded border border-gray-200">
-                        <div className="flex justify-between text-xs">
-                          <span>{alt.protocol}</span>
-                          <span>{parseFloat(alt.expectedOutput).toFixed(6)} {tokenOut}</span>
-                        </div>
-                        <div className="flex justify-between text-xs text-gray-500">
-                          <span>Impact: {alt.priceImpact}%</span>
-                          <span>Gas: {alt.estimatedGas} APT</span>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Settings */}
-      <div className="mb-6">
-        <div className="flex justify-between items-center mb-2">
-          <h4 className="font-medium text-gray-900">Settings</h4>
-        </div>
-        <div className="bg-gray-50 p-3 rounded-lg space-y-3">
-          <div className="flex justify-between items-center">
-            <span className="text-sm text-gray-600">Slippage Tolerance:</span>
-            <select
-              value={slippage}
-              onChange={(e) => setSlippage(parseFloat(e.target.value))}
-              className="text-sm bg-white border border-gray-300 rounded px-2 py-1"
-            >
-              <option value={0.1}>0.1%</option>
-              <option value={0.5}>0.5%</option>
-              <option value={1.0}>1.0%</option>
-              <option value={2.0}>2.0%</option>
-            </select>
-          </div>
-          <div className="flex items-center">
-            <input
-              type="checkbox"
-              id="autoExecute"
-              checked={autoExecute}
-              onChange={(e) => setAutoExecute(e.target.checked)}
-              className="mr-2"
-            />
-            <label htmlFor="autoExecute" className="text-sm text-gray-600">
-              Auto-execute when route is found
-            </label>
+    <div className="relative overflow-hidden">
+      {/* Tech background elements */}
+      <div className="absolute inset-0 overflow-hidden pointer-events-none -z-10">
+        {/* Grid pattern */}
+        <div className="absolute inset-0 opacity-5">
+          <div className="h-full w-full bg-[linear-gradient(to_right,#8B5CF680_1px,transparent_1px),linear-gradient(to_bottom,#8B5CF680_1px,transparent_1px)]" 
+               style={{ backgroundSize: '20px 20px' }}>
           </div>
         </div>
+        
+        {/* Glowing elements */}
+        <div className="absolute top-10 left-10 w-16 h-16 rounded-full bg-blue-500/10 blur-xl"></div>
+        <div className="absolute bottom-10 right-10 w-24 h-24 rounded-full bg-purple-500/10 blur-xl"></div>
       </div>
 
-      {/* Action Button */}
-      <button
-        onClick={executeSwap}
-        disabled={!route || txStatus === 'pending' || !connected}
-        className={`w-full py-3 px-4 rounded-xl font-medium ${
-          !route || txStatus === 'pending' || !connected
-            ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
-            : 'bg-blue-600 text-white hover:bg-blue-700'
-        }`}
-      >
-        {txStatus === 'pending' ? (
-          <span className="flex items-center justify-center">
-            <ArrowPathIcon className="h-5 w-5 animate-spin mr-2" />
-            Processing...
+      {/* Code-like background elements */}
+      <div className="absolute left-2 top-1/4 text-gray-800/10 font-mono text-xs -z-10">
+        {Array.from({ length: 5 }).map((_, i) => (
+          <div key={i} className="my-1">fn swap_tokens::{i + 1}() {'{'} ... {'}'}</div>
+        ))}
+      </div>
+
+      <div className="space-y-4">
+        {/* Status display */}
+        <div className="flex items-center space-x-2 mb-4">
+          <div className={`h-3 w-3 rounded-full ${isLoading ? 'bg-yellow-400 animate-pulse' : (route ? 'bg-green-400' : 'bg-red-400')}`}></div>
+          <span className="text-sm font-mono">
+            {isLoading ? 'SEARCHING_ROUTES' : (route ? 'ROUTE_FOUND' : 'NO_ROUTE_AVAILABLE')}
           </span>
-        ) : !connected ? (
-          'Connect Wallet to Swap'
-        ) : !route ? (
-          'Finding Best Route...'
-        ) : (
-          `Swap ${amount} ${tokenIn} for ~${parseFloat(route.expectedOutput).toFixed(6)} ${tokenOut}`
-        )}
-      </button>
-
-      {/* Transaction Status */}
-      {txStatus === 'success' && txHash && (
-        <div className="mt-4 p-3 bg-green-50 rounded-lg border border-green-200">
-          <p className="text-green-700 text-sm mb-1">Transaction submitted successfully!</p>
-          <a
-            href={`https://explorer.aptoslabs.com/txn/${txHash}?network=${network}`}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-xs text-blue-600 hover:underline"
-          >
-            View on Explorer
-          </a>
         </div>
-      )}
+
+        {/* Route information */}
+        {route && !isLoading && (
+          <div className="bg-gray-900/70 backdrop-blur-md rounded-xl border border-gray-700 p-4 space-y-3">
+            <div className="flex justify-between items-center">
+              <h3 className="text-blue-400 font-mono text-sm">OPTIMAL_ROUTE</h3>
+              <span className="text-xs bg-blue-900/50 text-blue-300 px-2 py-1 rounded-full border border-blue-800">
+                via {route.dex}
+              </span>
+            </div>
+            
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-1">
+                <p className="text-xs text-gray-500 font-mono">INPUT</p>
+                <p className="text-lg font-medium text-white">{amount} {tokenIn}</p>
+              </div>
+              <div className="space-y-1">
+                <p className="text-xs text-gray-500 font-mono">OUTPUT</p>
+                <p className="text-lg font-medium text-white">{route.expectedOutput} {tokenOut}</p>
+              </div>
+            </div>
+            
+            <div className="grid grid-cols-2 gap-4 pt-2">
+              <div className="space-y-1">
+                <p className="text-xs text-gray-500 font-mono">PRICE_IMPACT</p>
+                <p className={`text-sm font-medium ${
+                  parseFloat(route.priceImpact.toString()) > 5 
+                    ? 'text-red-400' 
+                    : parseFloat(route.priceImpact.toString()) > 1 
+                      ? 'text-yellow-400' 
+                      : 'text-green-400'
+                }`}>
+                  {route.priceImpact}%
+                </p>
+              </div>
+              <div className="space-y-1">
+                <p className="text-xs text-gray-500 font-mono">EST_GAS</p>
+                <p className="text-sm font-medium text-gray-300">{route.estimatedGas || 'N/A'}</p>
+              </div>
+            </div>
+            
+            <button
+              onClick={executeSwap}
+              disabled={isExecuting || !connected}
+              className={`w-full mt-4 py-2 px-4 rounded-lg font-medium flex items-center justify-center space-x-2 ${
+                isExecuting 
+                  ? 'bg-gray-700 text-gray-400 cursor-not-allowed' 
+                  : 'bg-gradient-to-r from-blue-600 to-purple-600 text-white hover:from-blue-500 hover:to-purple-500'
+              }`}
+            >
+              {isExecuting ? (
+                <>
+                  <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                  </svg>
+                  <span>Processing...</span>
+                </>
+              ) : (
+                <>
+                  <span>Execute Swap</span>
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 5l7 7m0 0l-7 7m7-7H3" />
+                  </svg>
+                </>
+              )}
+            </button>
+          </div>
+        )}
+
+        {/* Error message */}
+        {error && !isLoading && (
+          <div className="bg-red-900/30 backdrop-blur-md rounded-xl border border-red-700 p-4">
+            <p className="text-red-400 font-mono text-sm">{error}</p>
+          </div>
+        )}
+
+        {/* Loading state */}
+        {isLoading && (
+          <div className="bg-gray-900/70 backdrop-blur-md rounded-xl border border-gray-700 p-6 flex flex-col items-center justify-center">
+            <div className="flex space-x-2 justify-center items-center mb-4">
+              <div className="h-2 w-2 bg-blue-400 rounded-full animate-bounce" style={{ animationDelay: '0s' }}></div>
+              <div className="h-2 w-2 bg-blue-400 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
+              <div className="h-2 w-2 bg-blue-400 rounded-full animate-bounce" style={{ animationDelay: '0.4s' }}></div>
+            </div>
+            <p className="text-blue-400 font-mono text-sm">Finding optimal swap route...</p>
+          </div>
+        )}
+
+        {/* Terminal-like logs */}
+        <div className="mt-4">
+          <div className="flex items-center space-x-2 mb-2">
+            <div className="h-3 w-3 rounded-full bg-green-400"></div>
+            <h3 className="text-sm font-mono text-green-400">SWAP_AGENT_LOGS</h3>
+          </div>
+          <div className="bg-gray-900/90 backdrop-blur-md rounded-xl border border-gray-700 p-3 h-32 overflow-y-auto font-mono text-xs">
+            {logs.length > 0 ? (
+              logs.map((log, index) => (
+                <div key={index} className="text-gray-400 mb-1">
+                  <span className="text-green-500">$</span> {log}
+                </div>
+              ))
+            ) : (
+              <div className="text-gray-600 italic">Waiting for operations...</div>
+            )}
+            <div ref={logsEndRef} />
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

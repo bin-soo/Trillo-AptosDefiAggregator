@@ -255,7 +255,7 @@ export default function SwapPage() {
         <div className="max-w-5xl mx-auto">
           <h1 className="text-3xl font-bold text-blue-300 mb-6 text-center">AI-Powered Token Swap</h1>
           
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+          <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
             {/* Left Column - Swap Interface */}
             <div className="lg:col-span-2">
               <div className="bg-gray-800/50 backdrop-blur-md rounded-xl shadow-lg border border-gray-700 p-6">
@@ -392,10 +392,10 @@ export default function SwapPage() {
             </div>
 
             {/* Right Column - AI Agent */}
-            <div className="lg:col-span-1">
+            <div className="lg:col-span-2">
               {connected ? (
                 <div className="bg-gray-800/50 backdrop-blur-md rounded-xl shadow-lg border border-gray-700 p-6">
-                  <h3 className="text-lg font-medium text-blue-300 mb-4">AI Swap Agent</h3>
+                  <h3 className="text-lg font-medium text-blue-600 mb-4">AI Swap Agent</h3>
                   <SwapAgent
                     tokenIn={tokenIn}
                     tokenOut={tokenOut}
@@ -406,8 +406,8 @@ export default function SwapPage() {
                 </div>
               ) : (
                 <div className="bg-gray-800/50 backdrop-blur-md rounded-xl shadow-lg border border-gray-700 p-6 text-center">
-                  <h3 className="text-lg font-medium text-blue-300 mb-4">AI Swap Agent</h3>
-                  <p className="text-gray-400 mb-6">
+                  <h3 className="text-lg font-medium text-blue-600 mb-4">AI Swap Agent</h3>
+                  <p className="text-gray-800 mb-6">
                     Connect your wallet to access the AI-powered swap agent that will find the best routes and execute trades for you.
                   </p>
                   <WalletConnect onConnect={() => {}} />

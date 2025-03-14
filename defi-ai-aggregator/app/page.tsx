@@ -28,61 +28,31 @@ interface CustomMessage extends Message {
 }
 
 export default function Home() {
-  const { messages: aiMessages, input, handleInputChange, handleSubmit, setInput, setMessages: setAiMessages } = useChat();
+  const { messages, input, handleInputChange, handleSubmit, setInput, setMessages } = useChat();
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-  const [chatHistory, setChatHistory] = useState<Array<{ id: string; question: string; timestamp: Date }>>([]);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const [isTestnet, setIsTestnet] = useState(true);
+  const [chatHistory, setChatHistory] = useState<{ id: string; question: string; timestamp: Date }[]>([]);
   const { connected, account } = useWallet();
-  const { network, setNetwork, isTestnet } = useNetwork();
-  const [isProcessing, setIsProcessing] = useState(false);
-  const searchParams = useSearchParams();
+  const { network, setNetwork } = useNetwork();
   const router = useRouter();
-  const [isMounted, setIsMounted] = useState(false);
-  
-  // Set mounted state on client-side only
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const [isClient, setIsClient] = useState(false);
+
+  // Set client-side state once mounted to prevent hydration mismatch
   useEffect(() => {
-    setIsMounted(true);
+    setIsClient(true);
   }, []);
-  
-  // Cast messages to our custom type
-  const messages = aiMessages as CustomMessage[];
-  
-  // Type-safe setter for messages
-  const setMessages = (messagesOrUpdater: CustomMessage[] | ((messages: CustomMessage[]) => CustomMessage[])) => {
-    if (typeof messagesOrUpdater === 'function') {
-      setAiMessages(messagesOrUpdater as any);
-    } else {
-      setAiMessages(messagesOrUpdater);
-    }
-  };
 
-  // Check for query parameter on initial load
+  // Scroll to bottom when messages change
   useEffect(() => {
-    if (!isMounted) return;
-    
-    const query = searchParams.get('query');
-    if (query) {
-      // Submit the query automatically
-      const event = new Event('submit') as any;
-      handleInputChange({ target: { value: query } } as any);
-      setTimeout(() => {
-        handleSubmit(event);
-        // Clear the query parameter from URL to prevent resubmission on refresh
-        router.replace('/');
-      }, 500);
+    if (messagesEndRef.current) {
+      messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
     }
-  }, [searchParams, handleInputChange, handleSubmit, router, isMounted]);
-
-  // Scroll to bottom of messages
-  useEffect(() => {
-    if (isMounted) {
-      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-    }
-  }, [messages, isMounted]);
+  }, [messages]);
 
   // Update chat history when new user message is added
   useEffect(() => {
-    if (!isMounted) return;
+    if (!isClient) return;
     
     const userMessages = messages.filter(msg => msg.role === 'user');
     if (userMessages.length > 0) {
@@ -96,7 +66,7 @@ export default function Home() {
         }
       ]);
     }
-  }, [messages, isMounted]);
+  }, [messages, isClient]);
 
   // Toggle sidebar
   const toggleSidebar = () => {
@@ -559,7 +529,7 @@ Would you like me to explain more about any specific opportunity?`;
   };
 
   // Show a loading state during SSR or before client hydration
-  if (!isMounted) {
+  if (!isClient) {
     return (
       <div className="flex min-h-screen flex-col bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 text-white relative overflow-hidden">
         {/* Tech background elements */}
@@ -655,7 +625,7 @@ Would you like me to explain more about any specific opportunity?`;
           {/* Chat container - centered with max-width */}
           <div className="flex-1 overflow-hidden flex flex-col items-center">
             <div className="w-full max-w-4xl px-4 flex-1 flex flex-col">
-              {messages.length === 0 ? (
+              {messages.length === 0 && isClient ? (
               <div className="flex-1 flex flex-col items-center justify-center p-4">
                 <div className="max-w-2xl w-full space-y-8">
                   <div className="text-center">
@@ -724,17 +694,35 @@ Would you like me to explain more about any specific opportunity?`;
                     </div>
                   </div>
                 </div>
-                </div>
-              ) : (
+              </div>
+              ) : messages.length > 0 && isClient ? (
               <div ref={messagesEndRef} className="flex-1 overflow-y-auto py-4 space-y-4">
                 {messages.map(message => (
                   <ChatMessage key={message.id} message={message} />
                 ))}
+              </div>
+              ) : (
+              <div className="flex-1 flex flex-col items-center justify-center p-4">
+                <div className="max-w-2xl w-full space-y-8">
+                  <div className="text-center">
+                    <div className="h-16 w-16 rounded-full bg-blue-500/20 animate-pulse mx-auto mb-6"></div>
+                    <div className="h-8 w-48 bg-gray-800 animate-pulse mx-auto mb-2 rounded"></div>
+                    <div className="h-4 w-64 bg-gray-800 animate-pulse mx-auto rounded"></div>
+                  </div>
+                  
+                  <div className="h-40 w-full bg-gray-800/30 animate-pulse rounded-xl"></div>
+                  
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    {[1, 2, 3].map((i) => (
+                      <div key={i} className="p-4 rounded-xl bg-gray-800/30 animate-pulse border border-gray-700 h-32"></div>
+                    ))}
+                  </div>
                 </div>
+              </div>
               )}
             
               {/* Floating suggestions */}
-              {messages.length > 0 && (
+              {messages.length > 0 && isClient && (
                 <div className="py-2">
                 <FloatingSuggestions 
                   onActionClick={handleQuickAction}
@@ -748,7 +736,7 @@ Would you like me to explain more about any specific opportunity?`;
             {/* Chat input - full width but content is centered */}
             <div className="w-full p-4 border-t border-gray-700 bg-gray-800/50 backdrop-blur-md">
               <div className="max-w-4xl mx-auto">
-                {isMounted && (
+                {isClient && (
                   <form onSubmit={handleSubmitWithIntentDetection}>
                   <ChatInput
                     input={input}
@@ -781,154 +769,178 @@ Would you like me to explain more about any specific opportunity?`;
         <div className="absolute top-20 left-10 w-32 h-32 rounded-full border border-blue-500/20 animate-pulse-slow"></div>
         <div className="absolute bottom-20 right-10 w-48 h-48 rounded-full border border-purple-500/20 animate-pulse-slow" 
              style={{ animationDelay: '1s' }}></div>
-        <div className="absolute top-1/3 right-1/4 w-24 h-24 rounded-full border border-blue-500/20 animate-pulse-slow"
-             style={{ animationDelay: '2s' }}></div>
-             
-        {/* Tech circles */}
-        <div className="absolute -top-20 -left-20 w-80 h-80 rounded-full bg-blue-500/5"></div>
-        <div className="absolute -bottom-40 -right-20 w-96 h-96 rounded-full bg-purple-500/5"></div>
-        
-        {/* Code-like elements */}
-        <div className="absolute top-1/4 left-8 text-blue-500/10 text-xs font-mono">
-          {Array.from({ length: 10 }).map((_, i) => (
-            <div key={i} className="my-1">{'{'}aptos::move::module{'}'}::{i + 1}</div>
-          ))}
-        </div>
-        <div className="absolute bottom-1/4 right-8 text-purple-500/10 text-xs font-mono">
-          {Array.from({ length: 10 }).map((_, i) => (
-            <div key={i} className="my-1">fn defi_aggregator::{i + 1}() {'{'} ... {'}'}</div>
-          ))}
-        </div>
       </div>
-
-      {/* Sidebar for chat history and resources */}
-      <Sidebar
-        chatHistory={chatHistory}
-        onHistoryClick={handleHistoryClick}
-        isOpen={isSidebarOpen}
-        onToggle={toggleSidebar}
-      />
-
-      {/* Main content */}
-      <div className="flex flex-col h-screen">
-        {/* Sidebar */}
-        <Sidebar
+      
+      {/* Sidebar */}
+      {isClient && (
+        <Sidebar 
           chatHistory={chatHistory}
           onHistoryClick={handleHistoryClick}
           isOpen={isSidebarOpen}
           onToggle={toggleSidebar}
         />
-
-        {/* Main content */}
-        <div className="flex-1 flex flex-col h-full overflow-hidden">
+      )}
+      
+      <div className="flex-1 flex flex-col">
         {/* Header */}
-          <div className="border-b border-gray-700 bg-gray-800/50 backdrop-blur-md">
-            <div className="max-w-4xl mx-auto px-4 py-3 flex justify-between items-center">
-              <div className="flex items-center space-x-3">
-              <button
-                  onClick={toggleSidebar}
-                  className="p-2 rounded-lg hover:bg-gray-700 text-gray-300"
+        <header className="sticky top-0 z-10 bg-gray-900/80 backdrop-blur-md border-b border-gray-700">
+          <div className="container mx-auto px-4 py-3 flex justify-between items-center">
+            <div className="flex items-center space-x-4">
+              <button 
+                onClick={toggleSidebar}
+                className="p-2 rounded-lg hover:bg-gray-700 text-gray-300"
               >
                 <Bars3Icon className="h-6 w-6" />
               </button>
-                <div className="flex items-center space-x-2">
-                  <AptosLogo />
-                  <span className="font-mono text-xl text-blue-400">DeFi.AI</span>
-                </div>
+              <Link href="/" className="flex items-center space-x-2">
+                <AptosLogo />
+                <span className="font-semibold text-xl">DeFi AI Advisor</span>
+              </Link>
             </div>
-              <div className="flex items-center space-x-3">
+            
+            <div className="flex items-center space-x-3">
+              <Link 
+                href="/swap"
+                className="p-2 rounded-lg hover:bg-gray-700 text-gray-300 flex items-center space-x-1"
+                title="Swap Tokens"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4" />
+                </svg>
+                <span className="hidden md:inline text-sm">Swap</span>
+              </Link>
+              <Link 
+                href="/market"
+                className="p-2 rounded-lg hover:bg-gray-700 text-gray-300 flex items-center space-x-1"
+                title="Market Dashboard"
+              >
+                <ChartBarIcon className="h-5 w-5" />
+                <span className="hidden md:inline text-sm">Markets</span>
+              </Link>
               <button 
                 onClick={toggleNetwork}
-                  className={`px-3 py-1 rounded-lg text-sm font-mono ${
+                className={`px-3 py-1 rounded-lg text-sm font-mono ${
                   isTestnet 
-                      ? 'bg-yellow-900/50 text-yellow-400 border border-yellow-700' 
-                      : 'bg-blue-900/50 text-blue-400 border border-blue-700'
+                    ? 'bg-yellow-900/50 text-yellow-400 border border-yellow-700' 
+                    : 'bg-green-900/50 text-green-400 border border-green-700'
                 }`}
               >
-                  {isTestnet ? 'TESTNET' : 'MAINNET'}
+                {isTestnet ? 'TESTNET' : 'MAINNET'}
               </button>
-                {connected ? (
-                  <div className="flex items-center space-x-2 bg-gray-700/50 px-3 py-1 rounded-lg">
-                    <div className="h-2 w-2 rounded-full bg-green-500"></div>
-                    <span className="text-sm text-gray-300 font-mono">
-                      {account?.address?.toString().slice(0, 6)}...{account?.address?.toString().slice(-4)}
-                    </span>
-                  </div>
-                ) : (
-                  <WalletConnect onConnect={() => {}} />
-                )}
+              {isClient && <WalletConnect onConnect={() => {}} />}
+            </div>
+          </div>
+        </header>
+
+        {/* Main content area */}
+        <div className="flex-1 flex flex-col">
+          {/* Welcome section - always visible */}
+          <div className="w-full bg-gradient-to-r from-blue-900/30 to-purple-900/30 border-b border-gray-800">
+            <div className="max-w-4xl mx-auto px-4 py-6 text-center">
+              <div className="flex justify-center mb-4">
+                <div className="h-16 w-16 rounded-full bg-blue-500/20 flex items-center justify-center">
+                  <SparklesIcon className="h-8 w-8 text-blue-400" />
+                </div>
+              </div>
+              <h1 className="text-3xl font-bold text-blue-300 mb-2">Aptos DeFi AI Assistant</h1>
+              <p className="text-gray-400 max-w-md mx-auto">
+                Your AI-powered guide to navigating the Aptos DeFi ecosystem. Ask about swaps, yields, market analysis, and more.
+              </p>
+            </div>
+          </div>
+
+          {/* Quick actions section - always visible */}
+          <div className="w-full max-w-4xl mx-auto px-4 py-6">
+            {isClient && <QuickActions onActionClick={handleQuickAction} />}
+          </div>
+
+          {/* Feature cards - always visible */}
+          <div className="w-full max-w-4xl mx-auto px-4 pb-6">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="p-4 rounded-xl bg-gray-800/50 border border-gray-700">
+                <h3 className="text-lg font-medium text-blue-300 mb-2 flex items-center">
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4" />
+                  </svg>
+                  Swap Tokens
+                </h3>
+                <p className="text-gray-400 text-sm mb-3">
+                  Find the best rates across DEXes and execute trades with minimal slippage.
+                </p>
+                <Link 
+                  href="/swap"
+                  className="text-sm text-blue-400 hover:text-blue-300"
+                >
+                  Go to swap page →
+                </Link>
+              </div>
+              
+              <div className="p-4 rounded-xl bg-gray-800/50 border border-gray-700">
+                <h3 className="text-lg font-medium text-blue-300 mb-2 flex items-center">
+                  <CodeBracketIcon className="h-5 w-5 mr-2" />
+                  Developer Mode
+                </h3>
+                <p className="text-gray-400 text-sm mb-3">
+                  Access technical details, smart contract interactions, and developer resources.
+                </p>
+                <button 
+                  onClick={() => handleQuickAction("Show me the technical architecture of Aptos DeFi protocols")}
+                  className="text-sm text-blue-400 hover:text-blue-300"
+                >
+                  Explore technical docs →
+                </button>
+              </div>
+              
+              <div className="p-4 rounded-xl bg-gray-800/50 border border-gray-700">
+                <h3 className="text-lg font-medium text-blue-300 mb-2 flex items-center">
+                  <ChartBarIcon className="h-5 w-5 mr-2" />
+                  Market Analysis
+                </h3>
+                <p className="text-gray-400 text-sm mb-3">
+                  Get AI-powered insights on market trends, price predictions, and investment strategies.
+                </p>
+                <Link 
+                  href="/market"
+                  className="text-sm text-blue-400 hover:text-blue-300"
+                >
+                  View market dashboard →
+                </Link>
               </div>
             </div>
           </div>
-          
-          {/* Chat area with fixed height and scrollable content */}
-          <div className="flex-1 overflow-hidden flex flex-col relative">
-            {/* Background elements */}
-            <div className="absolute inset-0 bg-gradient-to-b from-gray-900 via-gray-800 to-gray-900 -z-10"></div>
-            
-            {/* Grid pattern */}
-            <div className="absolute inset-0 bg-[url('/static/grid-pattern.svg')] bg-repeat opacity-5 -z-10"></div>
-            
-            {/* Floating elements */}
-            <div className="absolute inset-0 overflow-hidden -z-10">
-              <div className="absolute top-1/4 left-1/4 h-64 w-64 rounded-full bg-blue-900/20 blur-3xl"></div>
-              <div className="absolute bottom-1/3 right-1/3 h-64 w-64 rounded-full bg-purple-900/20 blur-3xl"></div>
-            </div>
-            
-            {/* Code-like background elements */}
-            <div className="absolute left-4 top-1/4 text-gray-800/20 font-mono text-xs -z-10">
-              {Array.from({ length: 10 }).map((_, i) => (
-                <div key={i} className="my-1">fn process_message::{i + 1}() {'{'} ... {'}'}</div>
-              ))}
-            </div>
-            
-            {/* Chat messages - make this scrollable with fixed height */}
-            <div className="flex-1 overflow-y-auto px-4 py-4" style={{ scrollbarWidth: 'thin' }}>
-              <div className="max-w-4xl mx-auto">
-            {messages.length === 0 ? (
-                  <div className="flex flex-col items-center justify-center h-full py-12">
-                    <div className="bg-gray-800/50 backdrop-blur-md border border-gray-700 rounded-xl p-6 max-w-2xl w-full">
-                      <h2 className="text-2xl font-bold text-center text-blue-400 mb-4">Welcome to Aptos DeFi Assistant</h2>
-                      <p className="text-gray-300 text-center mb-6">
-                        Your AI-powered guide to navigating the Aptos DeFi ecosystem. Ask about swaps, yields, market analysis, or anything DeFi related.
-                      </p>
-                      
-                <QuickActions onActionClick={handleQuickAction} />
-                    </div>
-              </div>
-            ) : (
-                  <div className="space-y-4">
-                {messages.map((message, i) => (
-                  <ChatMessage key={i} message={message} />
+
+          {/* Chat messages section - only visible when there are messages */}
+          {messages.length > 0 && isClient && (
+            <div className="w-full max-w-4xl mx-auto px-4 py-6 border-t border-gray-800">
+              <h2 className="text-xl font-bold text-blue-300 mb-4">Conversation</h2>
+              <div className="space-y-4">
+                {messages.map(message => (
+                  <ChatMessage key={message.id} message={message} />
                 ))}
               </div>
-            )}
-          </div>
+              
+              {/* Floating suggestions */}
+              <div className="py-4">
+                <FloatingSuggestions 
+                  onActionClick={handleQuickAction}
+                  currentQuery={input}
+                  setInputText={setInput}
+                />
+              </div>
             </div>
+          )}
           
-            {/* Floating suggestions */}
-            {messages.length > 0 && (
-              <div className="py-2">
-            <FloatingSuggestions 
-              onActionClick={handleQuickAction}
-              currentQuery={input}
-                setInputText={setInput}
-            />
-            </div>
-            )}
-          </div>
-          
-          {/* Chat input - full width but content is centered */}
-          <div className="w-full p-4 border-t border-gray-700 bg-gray-800/50 backdrop-blur-md">
+          {/* Chat input - always visible */}
+          <div className="w-full p-4 border-t border-gray-700 bg-gray-800/50 backdrop-blur-md mt-auto">
             <div className="max-w-4xl mx-auto">
-              {isMounted && (
+              {isClient && (
                 <form onSubmit={handleSubmitWithIntentDetection}>
-              <ChatInput
-                input={input}
-                handleInputChange={handleInputChange}
-                handleSubmit={handleSubmitWithIntentDetection}
-                  isConnected={connected}
-              />
+                  <ChatInput
+                    input={input}
+                    handleInputChange={handleInputChange}
+                    handleSubmit={handleSubmitWithIntentDetection}
+                    isConnected={connected}
+                  />
                 </form>
               )}
             </div>
