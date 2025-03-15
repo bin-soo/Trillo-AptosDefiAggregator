@@ -81,11 +81,30 @@ export default function SwapAgent({
       const swapService = defiService;
       swapService.setTestnetMode(isTestnet);
       
-      const bestRoute = await swapService.getBestSwapRoute(
-        tokenIn as any,
-        tokenOut as any,
-        amount
-      );
+      // Pass the wallet address if connected
+      const walletAddr = connected && account ? account.address : undefined;
+      if (walletAddr) {
+        addLog(`Using wallet address: ${walletAddr.substring(0, 6)}...${walletAddr.substring(walletAddr.length - 4)}`);
+      }
+      
+      // Check if the getBestSwapRoute method accepts a wallet address parameter
+      // If it doesn't, call it without the wallet address
+      let bestRoute;
+      try {
+        bestRoute = await swapService.getBestSwapRoute(
+          tokenIn as any,
+          tokenOut as any,
+          amount,
+          walletAddr
+        );
+      } catch (e) {
+        // Fallback to the original method signature if the updated one fails
+        bestRoute = await swapService.getBestSwapRoute(
+          tokenIn as any,
+          tokenOut as any,
+          amount
+        );
+      }
       
       setRoute(bestRoute);
       addLog(`Found route via ${bestRoute.dex} with expected output of ${bestRoute.expectedOutput} ${tokenOut}`);
@@ -192,8 +211,8 @@ export default function SwapAgent({
               <span className="text-xs bg-blue-900/50 text-blue-300 px-2 py-1 rounded-full border border-blue-800">
                 via {route.dex}
               </span>
-            </div>
-            
+          </div>
+          
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-1">
                 <p className="text-xs text-gray-500 font-mono">INPUT</p>
@@ -222,8 +241,8 @@ export default function SwapAgent({
                 <p className="text-xs text-gray-500 font-mono">EST_GAS</p>
                 <p className="text-sm font-medium text-gray-300">{route.estimatedGas || 'N/A'}</p>
               </div>
-            </div>
-            
+              </div>
+              
             <button
               onClick={executeSwap}
               disabled={isExecuting || !connected}
@@ -250,15 +269,15 @@ export default function SwapAgent({
                 </>
               )}
             </button>
-          </div>
+                        </div>
         )}
 
         {/* Error message */}
         {error && !isLoading && (
           <div className="bg-red-900/30 backdrop-blur-md rounded-xl border border-red-700 p-4">
             <p className="text-red-400 font-mono text-sm">{error}</p>
-          </div>
-        )}
+                </div>
+              )}
 
         {/* Loading state */}
         {isLoading && (
@@ -269,8 +288,8 @@ export default function SwapAgent({
               <div className="h-2 w-2 bg-blue-400 rounded-full animate-bounce" style={{ animationDelay: '0.4s' }}></div>
             </div>
             <p className="text-blue-400 font-mono text-sm">Finding optimal swap route...</p>
-          </div>
-        )}
+        </div>
+      )}
 
         {/* Terminal-like logs */}
         <div className="mt-4">

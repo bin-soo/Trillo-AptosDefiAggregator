@@ -69,13 +69,15 @@ export class SwapService {
   async getBestSwapRoute(
     tokenIn: TokenType,
     tokenOut: TokenType,
-    amount: string
+    amount: string,
+    walletAddress?: string
   ): Promise<SwapRoute> {
     try {
       // First try to use Panora for better routing
       if (this.panoraClient) {
         try {
           // Get token addresses based on current network
+          console.log(`[swapService - getBestSwapRoute] Getting token addresses for ${tokenIn} and ${tokenOut} on ${this.isTestnet ? 'testnet' : 'mainnet'}`);
           const fromTokenAddress = this.dexService.getTokenAddress(tokenIn, this.isTestnet);
           const toTokenAddress = this.dexService.getTokenAddress(tokenOut, this.isTestnet);
           
@@ -83,12 +85,18 @@ export class SwapService {
           const formattedFromAddress = fromTokenAddress.startsWith('0x') ? fromTokenAddress : `0x${fromTokenAddress}`;
           const formattedToAddress = toTokenAddress.startsWith('0x') ? toTokenAddress : `0x${toTokenAddress}`;
           
+          // Use provided wallet address or a default one
+          const destinationAddress = walletAddress ? 
+            (walletAddress.startsWith('0x') ? walletAddress : `0x${walletAddress}`) : 
+            '0x1'; // Default address if none provided
+          
           // Get quote from Panora
           const quoteResponse = await this.panoraClient.SwapQuote({
-            chainId: this.isTestnet ? "2" : "1", // 1 for mainnet, 2 for testnet
+            chainId: "1", // always 1
             fromTokenAddress: formattedFromAddress as `0x${string}`,
             toTokenAddress: formattedToAddress as `0x${string}`,
             fromTokenAmount: amount,
+            toWalletAddress: destinationAddress as `0x${string}`,
             slippagePercentage: "0.5", // Default 0.5% slippage
             getTransactionData: "transactionPayload"
           } as any);
@@ -148,7 +156,7 @@ export class SwapService {
                     estimatedGas: route.estimatedGas ? parseFloat(route.estimatedGas) : 0.0002
                   }))
                 };
-                
+                console.log('[getBestSwapRoute] Returning panora swap route:', swapRoute);
                 return swapRoute;
               }
             }
@@ -303,10 +311,18 @@ export class SwapService {
     deadline: number = 20 * 60 // Default 20 minutes
   ): Promise<{ success: boolean; txHash?: string; error?: string; payload?: any }> {
     try {
-      console.log(`[executeSwap] Executing swap: ${tokenIn} -> ${tokenOut}, amount: ${amount}`);
+      console.log(`[swapService - executeSwap] Executing swap: ${amount} ${tokenIn} to ${tokenOut}`);
+      console.log(`[swapService - executeSwap] Wallet address: ${walletAddress}`);
       
-      // First, try to get the best route using Panora
-      const route = await this.getBestSwapRoute(tokenIn, tokenOut, amount);
+      // Get the best swap route, passing the wallet address
+      const route = await this.getBestSwapRoute(tokenIn, tokenOut, amount, walletAddress);
+      
+      if (!route || !route.swapPayload) {
+        return { 
+          success: false, 
+          error: "Failed to generate swap transaction. No valid route found." 
+        };
+      }
       
       // If we have a swapPayload from Panora, use it directly
       if (route.swapPayload) {
