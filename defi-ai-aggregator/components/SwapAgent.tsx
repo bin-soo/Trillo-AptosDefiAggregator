@@ -87,24 +87,13 @@ export default function SwapAgent({
         addLog(`Using wallet address: ${walletAddr.substring(0, 6)}...${walletAddr.substring(walletAddr.length - 4)}`);
       }
       
-      // Check if the getBestSwapRoute method accepts a wallet address parameter
-      // If it doesn't, call it without the wallet address
-      let bestRoute;
-      try {
-        bestRoute = await swapService.getBestSwapRoute(
-          tokenIn as any,
-          tokenOut as any,
-          amount,
-          walletAddr
-        );
-      } catch (e) {
-        // Fallback to the original method signature if the updated one fails
-        bestRoute = await swapService.getBestSwapRoute(
-          tokenIn as any,
-          tokenOut as any,
-          amount
-        );
-      }
+      // Call getBestSwapRoute with the wallet address
+      const bestRoute = await swapService.getBestSwapRoute(
+        tokenIn as any,
+        tokenOut as any,
+        amount,
+        walletAddr
+      );
       
       setRoute(bestRoute);
       addLog(`Found route via ${bestRoute.dex} with expected output of ${bestRoute.expectedOutput} ${tokenOut}`);

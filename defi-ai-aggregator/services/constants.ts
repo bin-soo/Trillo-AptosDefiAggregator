@@ -1,4 +1,4 @@
-// Define mainnet token addresses
+// Define token addresses in testnet and mainnet always 
 export const APTOS_COINS = {
   APT: {
     address: "0x1::aptos_coin::AptosCoin",

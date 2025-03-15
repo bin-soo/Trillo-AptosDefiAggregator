@@ -8,6 +8,8 @@ import { DexService } from './dexService';
 export class SwapService {
   private static instance: SwapService;
   private readonly PANORA_API_KEY = 'a4^KV_EaTf4MW#ZdvgGKX#HUD^3IFEAOV_kzpIE^3BQGA8pDnrkT7JcIy#HNlLGi';
+  private readonly PANORA_API_ENDPOINT = 'https://api.panora.exchange/swap';
+  private readonly PANORA_API_QUOTE_ENDPOINT = 'https://api.panora.exchange/swap/quote';
   private panoraClient: Panora | null = null;
   private isTestnet: boolean = true;
   private networkUrl: string = 'https://fullnode.mainnet.aptoslabs.com/v1';
@@ -72,111 +74,101 @@ export class SwapService {
     amount: string,
     walletAddress?: string
   ): Promise<SwapRoute> {
+    console.log(`Getting best swap route for ${amount} ${tokenIn} to ${tokenOut}`);
+    
     try {
-      // First try to use Panora for better routing
-      if (this.panoraClient) {
-        try {
-          // Get token addresses based on current network
-          console.log(`[swapService - getBestSwapRoute] Getting token addresses for ${tokenIn} and ${tokenOut} on ${this.isTestnet ? 'testnet' : 'mainnet'}`);
-          const fromTokenAddress = this.dexService.getTokenAddress(tokenIn, this.isTestnet);
-          const toTokenAddress = this.dexService.getTokenAddress(tokenOut, this.isTestnet);
-          
-          // Format addresses for Panora
-          const formattedFromAddress = fromTokenAddress.startsWith('0x') ? fromTokenAddress : `0x${fromTokenAddress}`;
-          const formattedToAddress = toTokenAddress.startsWith('0x') ? toTokenAddress : `0x${toTokenAddress}`;
-          
-          // Use provided wallet address or a default one
-          const destinationAddress = walletAddress ? 
-            (walletAddress.startsWith('0x') ? walletAddress : `0x${walletAddress}`) : 
-            '0x1'; // Default address if none provided
-          
-          // Get quote from Panora
-          const quoteResponse = await this.panoraClient.SwapQuote({
-            chainId: "1", // always 1
-            fromTokenAddress: formattedFromAddress as `0x${string}`,
-            toTokenAddress: formattedToAddress as `0x${string}`,
-            fromTokenAmount: amount,
-            toWalletAddress: destinationAddress as `0x${string}`,
-            slippagePercentage: "0.5", // Default 0.5% slippage
-            getTransactionData: "transactionPayload"
-          } as any);
-          
-          if (quoteResponse) {
-            console.log("Panora quote response:", quoteResponse);
-            
-            // For TypeScript compatibility, we need to access the data property carefully
-            const responseData = quoteResponse as any;
-            
-            if (responseData.data) {
-              const data = responseData.data;
-              const routes = data.routes || [];
-              
-              // If we have routes, use the best one
-              if (routes.length > 0) {
-                const bestRoute = routes[0];
-                
-                // Get token info
-                const tokenInInfo = this.isTestnet ? APTOS_TESTNET_COINS[tokenIn] : APTOS_COINS[tokenIn];
-                const tokenOutInfo = this.isTestnet ? APTOS_TESTNET_COINS[tokenOut] : APTOS_COINS[tokenOut];
-                
-                // Format the response to match our SwapRoute interface
-                const swapRoute: SwapRoute = {
-                  fromToken: tokenIn,
-                  toToken: tokenOut,
-                  fromAmount: amount,
-                  expectedOutput: data.toTokenAmount || "0",
-                  priceImpact: data.priceImpact ? parseFloat(data.priceImpact) : 0.5,
-                  estimatedGas: data.estimatedGas ? parseFloat(data.estimatedGas) : 0.0001,
-                  dex: bestRoute.name || "Aptos DEX",
-                  protocol: bestRoute.name || "Aptos DEX Aggregator",
-                  swapPayload: data.transactionPayload || data.rawTransaction,
-                  // Additional properties for extended functionality
-                  tokenIn: {
-                    symbol: tokenIn,
-                    address: fromTokenAddress,
-                    decimals: tokenInInfo.decimals
-                  },
-                  tokenOut: {
-                    symbol: tokenOut,
-                    address: toTokenAddress,
-                    decimals: tokenOutInfo.decimals
-                  },
-                  amount: amount,
-                  path: [{
-                    dex: bestRoute.name || "Aptos DEX",
-                    tokenIn: tokenIn,
-                    tokenOut: tokenOut,
-                    fee: bestRoute.fee || "0.3%"
-                  }],
-                  dexUrl: "https://aptoslabs.com",
-                  alternativeRoutes: routes.slice(1).map((route: any) => ({
-                    protocol: route.name || "Aptos DEX",
-                    expectedOutput: route.toTokenAmount || "0",
-                    priceImpact: route.priceImpact || "0.5",
-                    estimatedGas: route.estimatedGas ? parseFloat(route.estimatedGas) : 0.0002
-                  }))
-                };
-                console.log('[getBestSwapRoute] Returning panora swap route:', swapRoute);
-                return swapRoute;
-              }
-            }
-          }
-        } catch (panoraError) {
-          console.error("Error using Panora for swap route:", panoraError);
-          // Fall back to our existing implementation if Panora fails
-        }
+      // Always use APTOS_COINS for token information, regardless of network
+      const tokenInInfo = APTOS_COINS[tokenIn];
+      const tokenOutInfo = APTOS_COINS[tokenOut];
+      
+      if (!tokenInInfo || !tokenOutInfo) {
+        throw new Error(`Token information not found for ${tokenIn} or ${tokenOut}`);
       }
       
-      // Fall back to our existing implementation
-      return this.getFallbackSwapRoute(tokenIn, tokenOut, amount);
-    } catch (error) {
-      console.error('Error getting swap quotes:', {
-        error: error instanceof Error ? error.message : error,
-        params: { tokenIn, tokenOut, amount }
+      // Format addresses for Panora
+      const formattedFromAddress = tokenInInfo.address;
+      const formattedToAddress = tokenOutInfo.address;
+      
+      // Ensure wallet address is properly formatted
+      const destinationAddress = walletAddress ? 
+        (walletAddress.startsWith('0x') ? walletAddress : `0x${walletAddress}`) : 
+        '0x1'; // Default address if none provided
+      
+      console.log(`Using wallet address for swap: ${destinationAddress}`);
+      
+      // Call Panora API directly
+      const query = {
+        fromTokenAddress: formattedFromAddress,
+        toTokenAddress: formattedToAddress,
+        fromTokenAmount: amount,
+        // toWalletAddress: destinationAddress,
+      };
+      
+      const headers = {
+        "x-api-key": this.PANORA_API_KEY,
+        // "Content-Type": "application/json"
+      };
+      
+      const queryString = new URLSearchParams(query).toString();
+      const url = `${this.PANORA_API_QUOTE_ENDPOINT}?${queryString}`;
+      
+      console.log(`[getBestSwapRoute] Calling Panora API: ${url}`);
+      
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: headers
       });
       
-      // Return a fallback route when real data fetching fails
-      return this.generateFallbackSwapRoute(tokenIn, tokenOut, amount);
+      if (!response.ok) {
+        throw new Error(`Panora API error: ${response.status} ${response.statusText}`);
+      }
+      
+      const responseData = await response.json();
+      console.log("[getBestSwapRate] Panora API response:", responseData);
+      
+      // Check if we have quotes
+      if (responseData && responseData.quotes && responseData.quotes.length > 0) {
+        const bestQuote = responseData.quotes[0];
+        
+        // Format the response to match our SwapRoute interface
+        const swapRoute: SwapRoute = {
+          fromToken: tokenIn,
+          toToken: tokenOut,
+          fromAmount: amount,
+          expectedOutput: bestQuote.toTokenAmount || "0",
+          priceImpact: bestQuote.priceImpact ? parseFloat(bestQuote.priceImpact) : 0.5,
+          estimatedGas: 0, // Not provided by Panora API
+          dex: "Panora", // Using Panora as the aggregator name
+          protocol: bestQuote.route?.dex || "Multiple",
+          swapPayload: bestQuote.txData,
+          tokenIn: {
+            symbol: tokenIn,
+            address: formattedFromAddress,
+            decimals: tokenInInfo.decimals
+          },
+          tokenOut: {
+            symbol: tokenOut,
+            address: formattedToAddress,
+            decimals: tokenOutInfo.decimals
+          },
+          amount: amount,
+          path: bestQuote.route?.path?.map((step: any) => ({
+            dex: step.dex || "Unknown",
+            tokenIn: step.tokenIn || "",
+            tokenOut: step.tokenOut || "",
+            fee: step.fee || "0"
+          })) || [],
+          dexUrl: "https://app.panora.exchange"
+        };
+        
+        return swapRoute;
+      } else {
+        console.log("No quotes found from Panora, falling back to alternative method");
+        return this.getFallbackSwapRoute(tokenIn, tokenOut, amount);
+      }
+    } catch (error) {
+      console.error("Error getting swap route from Panora:", error);
+      return this.getFallbackSwapRoute(tokenIn, tokenOut, amount);
     }
   }
 
@@ -239,7 +231,7 @@ export class SwapService {
       return this.generateFallbackSwapRoute(tokenIn, tokenOut, amount);
     }
   }
-
+  
   /**
    * Generate a fallback swap route when real data fetching fails
    */
@@ -252,8 +244,10 @@ export class SwapService {
     
     // Parse input amount and get token info
     const inputAmount = parseFloat(amount);
-    const tokenInInfo = this.isTestnet ? APTOS_TESTNET_COINS[tokenIn] : APTOS_COINS[tokenIn];
-    const tokenOutInfo = this.isTestnet ? APTOS_TESTNET_COINS[tokenOut] : APTOS_COINS[tokenOut];
+    
+    // Always use APTOS_COINS for token information, regardless of network
+    const tokenInInfo = APTOS_COINS[tokenIn];
+    const tokenOutInfo = APTOS_COINS[tokenOut];
     
     // Set default token prices
     let tokenInPrice = 1;
@@ -318,10 +312,7 @@ export class SwapService {
       const route = await this.getBestSwapRoute(tokenIn, tokenOut, amount, walletAddress);
       
       if (!route || !route.swapPayload) {
-        return { 
-          success: false, 
-          error: "Failed to generate swap transaction. No valid route found." 
-        };
+        return { success: false, error: 'No valid route found' };
       }
       
       // If we have a swapPayload from Panora, use it directly
@@ -337,12 +328,12 @@ export class SwapService {
       if (this.isTestnet) {
         console.log('[executeSwap] Using testnet PancakeSwap router');
         
-        // Get token addresses
+        // Always use APTOS_COINS for token information, regardless of network
+        const tokenInInfo = APTOS_COINS[tokenIn];
+        
+        // For testnet, we need to get the testnet addresses
         const fromTokenAddress = this.dexService.getTokenAddress(tokenIn, true);
         const toTokenAddress = this.dexService.getTokenAddress(tokenOut, true);
-        
-        // Get token info for formatting
-        const tokenInInfo = APTOS_TESTNET_COINS[tokenIn];
         
         // Format the amount with the correct number of decimals
         const formattedAmount = this.formatTokenAmount(parseFloat(amount), tokenInInfo.decimals);
@@ -370,11 +361,11 @@ export class SwapService {
         };
       } else {
         // For mainnet, we'll use PancakeSwap
+        // Always use APTOS_COINS for token information, regardless of network
+        const tokenInInfo = APTOS_COINS[tokenIn];
+        
         const fromTokenAddress = this.dexService.getTokenAddress(tokenIn, false);
         const toTokenAddress = this.dexService.getTokenAddress(tokenOut, false);
-        
-        // Get token info for formatting
-        const tokenInInfo = APTOS_COINS[tokenIn];
         
         // Format the amount with the correct number of decimals
         const formattedAmount = this.formatTokenAmount(parseFloat(amount), tokenInInfo.decimals);
