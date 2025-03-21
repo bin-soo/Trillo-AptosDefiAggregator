@@ -72,7 +72,7 @@ export class SwapService {
     tokenIn: TokenType,
     tokenOut: TokenType,
     amount: string,
-    walletAddress?: string
+    walletAddress?: string | undefined
   ): Promise<SwapRoute> {
     console.log(`Getting best swap route for ${amount} ${tokenIn} to ${tokenOut}`);
     

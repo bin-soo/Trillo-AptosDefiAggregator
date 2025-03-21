@@ -2,16 +2,23 @@
 
 import { useState, useRef, useEffect } from 'react';
 import { PaperAirplaneIcon, MicrophoneIcon, LightBulbIcon } from '@heroicons/react/24/solid';
-import { CommandLineIcon } from '@heroicons/react/24/outline';
+import { CommandLineIcon, BeakerIcon } from '@heroicons/react/24/outline';
 
 interface ChatInputProps {
   input: string;
   handleInputChange: (e: React.ChangeEvent<HTMLTextAreaElement>) => void;
   handleSubmit: (e: React.FormEvent<HTMLFormElement>) => void;
   isConnected: boolean;
+  onAdvancedResearch?: () => void;
 }
 
-export default function ChatInput({ input, handleInputChange, handleSubmit, isConnected }: ChatInputProps) {
+export default function ChatInput({ 
+  input, 
+  handleInputChange, 
+  handleSubmit, 
+  isConnected, 
+  onAdvancedResearch 
+}: ChatInputProps) {
   const [isFocused, setIsFocused] = useState(false);
   const [isMounted, setIsMounted] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -38,6 +45,12 @@ export default function ChatInput({ input, handleInputChange, handleSubmit, isCo
         const formEvent = new Event('submit', { cancelable: true }) as any;
         handleSubmit(formEvent);
       }
+    }
+  };
+
+  const handleAdvancedResearchClick = () => {
+    if (onAdvancedResearch) {
+      onAdvancedResearch();
     }
   };
 
@@ -73,14 +86,17 @@ export default function ChatInput({ input, handleInputChange, handleSubmit, isCo
         />
         
         <div className="absolute right-2 bottom-2 flex space-x-1">
-          {/* Suggestion button */}
+          {/* Advanced Research button */}
           <button
             type="button"
-            className="p-2 rounded-lg text-gray-400 hover:text-blue-400 hover:bg-blue-900/20"
-            title="Get suggestions"
+            onClick={handleAdvancedResearchClick}
+            className="p-2 rounded-lg text-purple-400 hover:text-purple-300 hover:bg-purple-900/20"
+            title="Advanced Research"
           >
-            <LightBulbIcon className="h-5 w-5" />
+            <BeakerIcon className="h-5 w-5" />
           </button>
+          
+
           
           {/* Submit button */}
           <button

@@ -82,17 +82,17 @@ export default function FloatingSuggestions({
 
   return (
     <div className="w-full max-w-4xl mx-auto">
-      <div className="flex items-center space-x-2 mb-2">
+      <div className="flex items-center space-x-2 mb-1">
         <LightBulbIcon className="h-4 w-4 text-yellow-400" />
         <span className="text-xs text-gray-400 font-mono">SUGGESTIONS</span>
       </div>
       
-      <div className="flex flex-wrap gap-2">
+      <div className="flex overflow-x-auto pb-2 hide-scrollbar gap-2">
         {suggestions.map((suggestion, index) => (
           <button
             key={index}
             onClick={() => handleSuggestionClick(suggestion)}
-            className="px-3 py-1.5 bg-gray-800/80 hover:bg-gray-700 border border-gray-700 rounded-full text-sm text-gray-300 transition-colors flex items-center space-x-1 group"
+            className="px-3 py-1 bg-gray-800/80 hover:bg-gray-700 border border-gray-700 rounded-full text-sm text-gray-300 transition-colors flex-shrink-0 flex items-center space-x-1 group whitespace-nowrap"
           >
             <span className="text-xs text-blue-400 group-hover:text-blue-300">&gt;</span>
             <span>{suggestion}</span>

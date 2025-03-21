@@ -14,6 +14,8 @@ import WalletConnect from '@/components/WalletConnect';
 import { SwapRoute, DeFiAction } from '@/types/defi';
 import { TokenType } from '@/services/constants';
 import defiService from '@/services/defiService';
+import AdvancedResearchModal, { AdvancedResearchData } from '@/components/AdvancedResearchModal';
+import { nanoid } from 'nanoid';
 
 // Dynamically import components that might cause hydration issues
 const ChatMessage = dynamic(() => import('@/components/ChatMessage'), { ssr: false });
@@ -28,7 +30,7 @@ interface CustomMessage extends Message {
 }
 
 export default function Home() {
-  const { messages, input, handleInputChange, handleSubmit, setInput, setMessages } = useChat();
+  const { messages, input, handleInputChange, handleSubmit: originalHandleSubmit, setInput, setMessages, isLoading } = useChat();
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isTestnet, setIsTestnet] = useState(true);
   const [chatHistory, setChatHistory] = useState<{ id: string; question: string; timestamp: Date }[]>([]);
@@ -39,6 +41,8 @@ export default function Home() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const [isClient, setIsClient] = useState(false);
   const [initialQueryProcessed, setInitialQueryProcessed] = useState(false);
+  const [showAdvancedResearch, setShowAdvancedResearch] = useState(false);
+  const [advancedResearchData, setAdvancedResearchData] = useState<AdvancedResearchData | null>(null);
 
   // Set client-side state once mounted to prevent hydration mismatch
   useEffect(() => {
@@ -71,12 +75,28 @@ export default function Home() {
     }
   }, [isClient, searchParams, setInput, initialQueryProcessed]);
 
-  // Scroll to bottom when messages change
+  // Update the scroll effect to be more robust
   useEffect(() => {
     if (messagesEndRef.current) {
-      messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
+      // Use a small timeout to ensure DOM has updated
+      setTimeout(() => {
+        messagesEndRef.current?.scrollIntoView({ 
+          behavior: 'smooth', 
+          block: 'end'
+        });
+      }, 100);
     }
   }, [messages]);
+
+  // Add another effect to scroll to bottom when a new message is being typed
+  useEffect(() => {
+    if (input.trim() && messagesEndRef.current) {
+      messagesEndRef.current.scrollIntoView({ 
+        behavior: 'smooth', 
+        block: 'end'
+      });
+    }
+  }, [input]);
 
   // Update chat history when new user message is added
   useEffect(() => {
@@ -538,7 +558,7 @@ Would you like me to explain more about any specific opportunity?`;
     
     // First, add the user message to the chat
     const userMessage = input.trim();
-    handleSubmit(e);
+    originalHandleSubmit(e);
     
     // Then, detect and handle intents
     const isSwapIntent = await handleSwapIntent(userMessage);
@@ -554,6 +574,118 @@ Would you like me to explain more about any specific opportunity?`;
     if (isYieldIntent) return;
     
     // If no specific intent was detected, the default AI response will be used
+  };
+
+  // Add a handler for the advanced research button
+  const handleAdvancedResearch = () => {
+    console.log("Advanced research button clicked");
+    setShowAdvancedResearch(true);
+  };
+
+  // Create a custom chat function that allows passing metadata
+  const chat = async ({ messages, data }: { messages: any[], data: any }) => {
+    try {
+      const response = await fetch('/api/chat', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          messages,
+          data,
+        }),
+      });
+      
+      if (!response.ok) {
+        throw new Error(`Error: ${response.status}`);
+      }
+      
+      const reader = response.body?.getReader();
+      if (!reader) throw new Error('Response body is null');
+      
+      // Process the streaming response
+      const decoder = new TextDecoder();
+      let done = false;
+      let accumulatedContent = '';
+      
+      while (!done) {
+        const { value, done: doneReading } = await reader.read();
+        done = doneReading;
+        
+        if (value) {
+          const chunkText = decoder.decode(value, { stream: !done });
+          accumulatedContent += chunkText;
+          
+          // Update the AI message as chunks arrive
+          setMessages(currentMessages => {
+            const last = currentMessages[currentMessages.length - 1];
+            
+            // If the last message is from the assistant, update it
+            if (last?.role === 'assistant') {
+              return [
+                ...currentMessages.slice(0, -1),
+                { ...last, content: accumulatedContent }
+              ];
+            }
+            
+            // Otherwise, add a new message
+            return [
+              ...currentMessages,
+              { id: nanoid(), role: 'assistant', content: accumulatedContent }
+            ];
+          });
+        }
+      }
+      
+      return accumulatedContent;
+    } catch (error) {
+      console.error('Error in chat function:', error);
+      // Add error handling UI update here
+      setMessages(currentMessages => [
+        ...currentMessages,
+        { 
+          id: nanoid(), 
+          role: 'assistant', 
+          content: 'Sorry, I encountered an error processing your request. Please try again.'
+        }
+      ]);
+    }
+  };
+
+  // Add a handler for submitting advanced research
+  const handleAdvancedResearchSubmit = async (data: AdvancedResearchData) => {
+    console.log("Advanced research submitted:", data);
+    setAdvancedResearchData(data);
+    
+    // Create a chat message with the research query
+    const userMessage = {
+      id: nanoid(),
+      role: 'user' as const,
+      content: data.query,
+    };
+    
+    // Add the user message to the UI
+    setMessages((current) => [...current, userMessage]);
+    
+    // Clear the input
+    setInput('');
+    
+    // Create the metadata for the API
+    const metadata = {
+      isAdvancedResearch: true,
+      researchType: data.researchType,
+      sources: data.sources,
+      depth: data.depth,
+      customInstructions: data.customInstructions
+    };
+    
+    console.log("Sending metadata to API:", metadata);
+    
+    // Use the custom chat function with metadata
+    await chat({
+      messages: [...messages, userMessage],
+      data: { metadata }
+    });
   };
 
   // Show a loading state during SSR or before client hydration
@@ -771,6 +903,7 @@ Would you like me to explain more about any specific opportunity?`;
                     handleInputChange={handleInputChange}
                     handleSubmit={handleSubmitWithIntentDetection}
                     isConnected={connected}
+                    onAdvancedResearch={handleAdvancedResearch}
                   />
                   </form>
                 )}
@@ -783,7 +916,7 @@ Would you like me to explain more about any specific opportunity?`;
   }
 
   return (
-    <main className="flex min-h-screen flex-col bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 text-white relative overflow-hidden">
+    <main className="flex flex-col min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 text-white relative">
       {/* Tech background elements */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
         {/* Grid pattern */}
@@ -809,7 +942,7 @@ Would you like me to explain more about any specific opportunity?`;
         />
       )}
       
-      <div className="flex-1 flex flex-col">
+      <div className="flex-1 flex flex-col h-screen">
         {/* Header */}
         <header className="sticky top-0 z-10 bg-gray-900/80 backdrop-blur-md border-b border-gray-700">
           <div className="container mx-auto px-4 py-3 flex justify-between items-center">
@@ -860,8 +993,8 @@ Would you like me to explain more about any specific opportunity?`;
           </div>
         </header>
 
-        {/* Main content area */}
-        <div className="flex-1 flex flex-col">
+        {/* Content area - this is the scrollable part */}
+        <div className="flex-1 overflow-y-auto pb-24"> {/* Add padding bottom to account for fixed chat input */}
           {/* Welcome section - always visible */}
           <div className="w-full bg-gradient-to-r from-blue-900/30 to-purple-900/30 border-b border-gray-800">
             <div className="max-w-4xl mx-auto px-4 py-6 text-center">
@@ -937,7 +1070,7 @@ Would you like me to explain more about any specific opportunity?`;
             </div>
           </div>
 
-          {/* Chat messages section - only visible when there are messages */}
+          {/* Chat messages section */}
           {messages.length > 0 && isClient && (
             <div className="w-full max-w-4xl mx-auto px-4 py-6 border-t border-gray-800">
               <h2 className="text-xl font-bold text-blue-300 mb-4">Conversation</h2>
@@ -945,22 +1078,29 @@ Would you like me to explain more about any specific opportunity?`;
                 {messages.map(message => (
                   <ChatMessage key={message.id} message={message} />
                 ))}
-              </div>
-              
-              {/* Floating suggestions */}
-              <div className="py-4">
-                <FloatingSuggestions 
-                  onActionClick={handleQuickAction}
-                  currentQuery={input}
-                  setInputText={setInput}
-                />
+                {/* Add this invisible element for scroll targeting */}
+                <div ref={messagesEndRef} className="h-px w-full" aria-hidden="true"></div>
               </div>
             </div>
           )}
+        </div>
+        
+        {/* Fixed position container for floating suggestions and chat input */}
+        <div className="fixed bottom-0 left-0 right-0 bg-gradient-to-t from-gray-900 to-transparent pt-6">
+          {/* Floating suggestions */}
+          {messages.length > 0 && isClient && (
+            <div className="w-full max-w-4xl mx-auto px-4 mb-2">
+              <FloatingSuggestions 
+                onActionClick={handleQuickAction}
+                currentQuery={input}
+                setInputText={setInput}
+              />
+            </div>
+          )}
           
-          {/* Chat input - always visible */}
-          <div className="w-full p-4 border-t border-gray-700 bg-gray-800/50 backdrop-blur-md mt-auto">
-            <div className="max-w-4xl mx-auto">
+          {/* Chat input */}
+          <div className="w-full border-t border-gray-700 bg-gray-800/95 backdrop-blur-md py-4">
+            <div className="max-w-4xl mx-auto px-4">
               {isClient && (
                 <form onSubmit={handleSubmitWithIntentDetection}>
                   <ChatInput
@@ -968,6 +1108,7 @@ Would you like me to explain more about any specific opportunity?`;
                     handleInputChange={handleInputChange}
                     handleSubmit={handleSubmitWithIntentDetection}
                     isConnected={connected}
+                    onAdvancedResearch={handleAdvancedResearch}
                   />
                 </form>
               )}
@@ -975,6 +1116,15 @@ Would you like me to explain more about any specific opportunity?`;
           </div>
         </div>
       </div>
+
+      {/* Advanced Research Modal */}
+      {showAdvancedResearch && (
+        <AdvancedResearchModal
+          isOpen={showAdvancedResearch}
+          onClose={() => setShowAdvancedResearch(false)}
+          onSubmit={handleAdvancedResearchSubmit}
+        />
+      )}
     </main>
   );
 }

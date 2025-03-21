@@ -18,6 +18,8 @@ body {
       rgb(var(--background-end-rgb))
     )
     fixed;
+  min-height: 100vh;
+  overflow-x: hidden;
 }
 
 /* Add custom styles here */
@@ -118,4 +120,54 @@ body {
       opacity: 0.7;
     }
   }
+}
+
+html {
+  scroll-padding-bottom: 120px; /* adjust based on your chat input height */
+}
+
+/* Improve fixed positioning */
+.fixed-chat-container {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 50;
+  background: linear-gradient(to top, rgba(17, 24, 39, 1) 50%, rgba(17, 24, 39, 0) 100%);
+  padding-top: 2rem;
+}
+
+/* Ensure content isn't hidden behind fixed elements */
+.content-with-fixed-chat {
+  padding-bottom: 8rem;
+}
+
+/* Add smooth scrolling to html for better UX */
+html {
+  scroll-behavior: smooth;
+  scroll-padding-bottom: 8rem;
+}
+
+/* Add this to ensure the page fills the viewport */
+body, #__next, main {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Target next.js wrapper directly */
+div[data-nextjs-root] {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+
+/* Add these to your globals.css file */
+.hide-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+.hide-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
 }

@@ -195,7 +195,7 @@ export class DeFiService {
     tokenIn: TokenType,
     tokenOut: TokenType,
     amount: string,
-    walletAddr: string
+    walletAddr?: string | undefined,
   ): Promise<SwapRoute> {
     return swapService.getBestSwapRoute(tokenIn, tokenOut, amount, walletAddr);
   }

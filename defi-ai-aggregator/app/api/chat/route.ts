@@ -303,9 +303,136 @@ function isMarketAnalysisQuery(message: string): boolean {
   return marketKeywords.some(keyword => lowercaseMessage.includes(keyword));
 }
 
+// Add a new function to detect advanced research queries
+function isAdvancedResearchQuery(message: string, metadata?: any): boolean {
+  // Check if the message has advanced research metadata
+  console.log("[Advanced Research] is advanced research:", metadata);
+  if (metadata?.isAdvancedResearch) {
+    
+    return true;
+  }
+  
+  // Otherwise check if the message contains research keywords
+  const researchKeywords = [
+    'advanced research',
+    'deep dive',
+    'comprehensive analysis',
+    'research this topic',
+    'technical analysis'
+  ];
+  
+  return researchKeywords.some(keyword => 
+    message.toLowerCase().includes(keyword)
+  );
+}
+
+// Add a function to handle advanced research
+async function handleAdvancedResearch(message: string, metadata?: any): Promise<string> {
+  // Prepare research parameters
+  const researchType = metadata?.researchType || 'comprehensive';
+  const sources = metadata?.sources || ['web', 'aptos_docs'];
+  const depth = metadata?.depth || 'deep';
+  const customInstructions = metadata?.customInstructions || '';
+  
+  console.log("[Advanced Research] Processing request:", { 
+    researchType, 
+    sources, 
+    depth, 
+    hasCustomInstructions: !!customInstructions 
+  });
+
+  // Create a system prompt based on the research parameters
+  let systemPrompt = `You are an expert DeFi researcher focusing on the Aptos blockchain ecosystem. `;
+  
+  // Add research type instructions
+  if (researchType === 'technical') {
+    systemPrompt += `Provide a technical deep-dive with code examples, architecture details, and implementation specifics. `;
+  } else if (researchType === 'competitor') {
+    systemPrompt += `Compare different protocols, examining their strengths, weaknesses, and unique features. `;
+  } else if (researchType === 'comprehensive') {
+    systemPrompt += `Deliver a comprehensive analysis covering technical aspects, market implications, risks, and opportunities. `;
+  }
+  
+  // Add depth instructions
+  if (depth === 'expert') {
+    systemPrompt += `Your response should be extremely detailed, citing specific implementations, algorithms, and technical specifications. `;
+  } else if (depth === 'deep') {
+    systemPrompt += `Provide an in-depth analysis with substantive details and examples. `;
+  } else {
+    systemPrompt += `Offer a clear and accessible overview with key points and examples. `;
+  }
+  
+  // Add source instructions
+  if (sources.includes('web')) {
+    systemPrompt += `Incorporate the latest information available online. `;
+  }
+  if (sources.includes('aptos_docs')) {
+    systemPrompt += `Reference official Aptos documentation when applicable. `;
+  }
+  if (sources.includes('defi_protocols')) {
+    systemPrompt += `Analyze relevant DeFi protocols on Aptos including their documentation and whitepapers. `;
+  }
+  if (sources.includes('aptos_code')) {
+    systemPrompt += `Examine relevant Move code and smart contracts when appropriate. `;
+  }
+  
+  // Add custom instructions if provided
+  if (customInstructions) {
+    systemPrompt += `Additional instructions: ${customInstructions}`;
+  }
+  
+  try {
+    // Import the OpenAI SDK properly
+    const { OpenAI } = await import('openai');
+    
+    // Initialize the client with your API key
+    const openai = new OpenAI({
+      apiKey: process.env.OPENAI_API_KEY,
+    });
+    
+    console.log("[Advanced Research] Sending request to OpenAI");
+    
+    const completion = await openai.chat.completions.create({
+      model: "gpt-4-turbo",
+      messages: [
+        {
+          role: "system",
+          content: systemPrompt
+        },
+        {
+          role: "user",
+          content: message
+        }
+      ],
+      temperature: 0.7,
+      max_tokens: 4000,
+    });
+
+    return completion.choices[0].message.content || "I couldn't complete the research at this time.";
+  } catch (error) {
+    console.error("Advanced research error:", error);
+    return "I encountered an error while conducting this research. Please try again with a more specific query.";
+  }
+}
+
 export async function POST(req: Request) {
-  const { messages } = await req.json();
+  // Log the entire request body for debugging
+  const body = await req.json();
+  console.log("[API] Full request body:", JSON.stringify(body, null, 2));
+  
+  // Extract messages and metadata
+  const { messages, data } = body;
+  const metadata = data?.metadata;
+  
+  console.log("[API] Extracted metadata:", JSON.stringify(metadata, null, 2));
+  
   const lastMessage = messages[messages.length - 1].content.toLowerCase();
+
+  // Add logging to debug
+  console.log("[API] Request received", { 
+    messageCount: messages.length, 
+    hasMetadata: !!metadata 
+  });
 
   // Step 1: Check if this is a market analysis or price prediction query
   if (isMarketAnalysisQuery(lastMessage)) {
@@ -482,6 +609,23 @@ export async function POST(req: Request) {
     }
   }
 
+  // Check if this is an advanced research query
+  if (isAdvancedResearchQuery(lastMessage, metadata)) {
+    // Handle the advanced research query
+    console.log("[Advanced Research] Metadata:", metadata);
+    const researchResponse = await handleAdvancedResearch(lastMessage, metadata);
+    
+    // Return the response
+    return new StreamingTextResponse(
+      new ReadableStream({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode(researchResponse));
+          controller.close();
+        }
+      })
+    );
+  }
+
   // Step 5: If none of the specialized handlers matched, use OpenAI with web search
   console.log('[API] No specialized handler matched, using OpenAI web search');
   
@@ -531,5 +675,5 @@ export async function POST(req: Request) {
         },
       })
     );
-  }
+  }  
 } 
