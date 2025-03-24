@@ -284,4 +284,9 @@ export const FALLBACK_PRICES = {
   'USDC': 1.0,
   'USDT': 1.0,
   'DAI': 1.0
-}; 
+};
+
+// Add the Aptos node URL
+export const APTOS_NODE_URL = 'https://fullnode.mainnet.aptoslabs.com/v1';
+export const APTOS_DEVNET_URL = 'https://fullnode.devnet.aptoslabs.com/v1';
+export const APTOS_TESTNET_URL = 'https://fullnode.testnet.aptoslabs.com/v1'; 

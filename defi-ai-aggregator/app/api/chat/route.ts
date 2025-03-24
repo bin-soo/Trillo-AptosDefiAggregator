@@ -5,6 +5,7 @@ import defiService from '@/services/defiService';
 import { LendingInfo, SwapRoute } from '@/types/defi';
 import { APTOS_COINS, APTOS_TESTNET_COINS } from '@/services/constants';
 import { OpenAIStream } from 'ai';
+import copyTradingService from '@/services/copyTradingService';
 
 // Initialize OpenAI Edge client
 const config = new Configuration({
@@ -421,6 +422,80 @@ function generateResearchPrompt(query: string, metadata?: any): string {
   return prompt;
 }
 
+// Add this function to detect copy trading requests in the user message
+function isCopyTradingRequest(message: string): { isRequest: boolean; address?: string } {
+  // Check if this is a request to analyze or copy trade from a specific address
+  const copyTradingRegex = /(?:copy\s+trad(?:e|ing)|follow\s+trader|analyze\s+trader|track\s+wallet).*?(0x[0-9a-fA-F]{1,64})/i;
+  const match = message.match(copyTradingRegex);
+  console.log("[isCopyTradingRequest] match:", match);
+  
+  if (match && match[1]) {
+    const address = match[1];
+    return { isRequest: true, address };
+  }
+  
+  return { isRequest: false };
+}
+
+// More advanced intent detection system
+function detectMessageIntent(message: string): string {
+  const lowercaseMsg = message.toLowerCase();
+  console.log("[detectIntent] Analyzing message:", lowercaseMsg);
+  
+  // Define intent keywords with weights
+  const intents = {
+    "top_traders": {
+      keywords: ["top traders", "best traders", "recommended traders", "traders to copy", 
+                "show traders", "find traders", "copy trading list", "who to follow"],
+      score: 0
+    },
+    "copy_specific_trader": {
+      keywords: ["copy trading from", "follow trader", "copy trader", "analyze trader", 
+                "track wallet", "copy address", "follow address"],
+      score: 0
+    },
+    "swap_tokens": {
+      keywords: ["swap", "exchange", "trade", "convert", " to ", "for"],
+      score: 0
+    },
+    "lending_rates": {
+      keywords: ["lending rates", "borrow rates", "interest rates", "deposit rates", 
+                "apy", "interest", "yield"],
+      score: 0
+    },
+    "market_analysis": {
+      keywords: ["market analysis", "price prediction", "forecast", "outlook", 
+                "sentiment", "trend"],
+      score: 0
+    }
+  };
+  
+  // Score each intent
+  Object.keys(intents).forEach(intentKey => {
+    const intent = intents[intentKey];
+    intent.keywords.forEach(keyword => {
+      if (lowercaseMsg.includes(keyword)) {
+        intent.score += 1;
+        console.log(`[detectIntent] Matched keyword '${keyword}' for intent '${intentKey}'`);
+      }
+    });
+  });
+  
+  // Get highest scoring intent
+  let highestScore = 0;
+  let detectedIntent = "unknown";
+  
+  Object.keys(intents).forEach(intentKey => {
+    if (intents[intentKey].score > highestScore) {
+      highestScore = intents[intentKey].score;
+      detectedIntent = intentKey;
+    }
+  });
+  
+  console.log(`[detectIntent] Detected intent: ${detectedIntent} with score ${highestScore}`);
+  return highestScore > 0 ? detectedIntent : "unknown";
+}
+
 export async function POST(req: Request) {
   // Log the entire request body for debugging
   const body = await req.json();
@@ -432,44 +507,87 @@ export async function POST(req: Request) {
   
   console.log("[API] Extracted metadata:", JSON.stringify(metadata, null, 2));
   
-  const lastMessage = messages[messages.length - 1].content.toLowerCase();
+  const lastMessage = messages[messages.length - 1].content;
+  const lastMessageLower = lastMessage.toLowerCase();
 
   // Add logging to debug
   console.log("[API] Request received", { 
+    messageContent: lastMessage,
     messageCount: messages.length, 
     hasMetadata: !!metadata 
   });
 
-  // Step 1: Check if this is a market analysis or price prediction query
-  if (isMarketAnalysisQuery(lastMessage)) {
-    const defiService = await import('@/services/defiService').then(mod => mod.default);
-    
-    try {
-      // Extract topic from the message
-      let topic = lastMessage;
-      if (lastMessage.includes('price prediction')) {
-        topic = 'price prediction';
-      } else if (lastMessage.includes('sentiment')) {
-        topic = 'market sentiment';
-      } else if (lastMessage.includes('analysis')) {
-        topic = 'market analysis';
-      }
-      
-      console.log(`[API] Generating market analysis for topic: ${topic}`);
-      const analysis = await defiService.getMarketAnalysis(topic);
-      
-      return new Response(analysis, {
-        headers: { 'Content-Type': 'text/plain' },
-      });
+  // Use intent detection
+  const intent = detectMessageIntent(lastMessage);
+  console.log("[API] Detected intent:", intent);
+  
+  // Handle based on intent
+  if (intent === "top_traders") {
+    console.log("[API] Handling top traders request");
+    return new StreamingTextResponse(
+      new ReadableStream({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode(
+            `Here are some top-performing traders on the Aptos network that you might want to consider for copy trading:\n\n` +
+            `I'm showing you a list of recommended traders based on their historical performance, risk level, and trading style. You can analyze any of these traders to see detailed metrics before deciding to copy their strategies.\n\n` +
+            `To view a complete analysis of any trader, simply click "Analyze" next to their profile or type "copy trading from [address]" to analyze a specific trader's address.`
+          ));
+          controller.close();
+        },
+      })
+    );
+  } else if (intent === "copy_specific_trader") {
+    const copyTradingCheck = isCopyTradingRequest(lastMessage);
+    if (copyTradingCheck.isRequest && copyTradingCheck.address) {
+      try {
+        // Check if the address is valid
+        if (!copyTradingService.validateAptosAddress(copyTradingCheck.address)) {
+          return new StreamingTextResponse(
+            new ReadableStream({
+              start(controller) {
+                controller.enqueue(new TextEncoder().encode(
+                  `The address format appears to be invalid. Aptos addresses should start with 0x followed by 64 hexadecimal characters. Please check the address and try again.`
+                ));
+                controller.close();
+              },
+            })
+          );
+        }
+        
+        // Format a response about the copy trading analysis
+        const address = copyTradingCheck.address;
+        return new StreamingTextResponse(
+          new ReadableStream({
+            start(controller) {
+              controller.enqueue(new TextEncoder().encode(
+                `I'm analyzing the trading profile for address ${address.slice(0, 8)}...${address.slice(-8)}.\n\n` +
+                `This might take a moment as I retrieve and analyze on-chain transactions.\n\n` +
+                `You'll see a detailed report showing:\n` +
+                `• Trading history and performance metrics\n` +
+                `• Trading style and risk assessment\n` +
+                `• Recommended portfolio allocation\n` +
+                `• Recent successful trades to potentially copy\n\n` +
+                `The analysis tool will open shortly. Once it loads, you can decide if you want to set up copy trading based on the trader's profile.`
+              ));
+              controller.close();
+            },
+          })
+        );
     } catch (error) {
-      console.error('Error generating market analysis:', error);
-      return new Response(
-        `I'm sorry, I couldn't generate a market analysis at this time. The error was: ${error instanceof Error ? error.message : 'Unknown error'}`,
-        { headers: { 'Content-Type': 'text/plain' } }
-      );
+        console.error('Error processing copy trading request:', error);
+        return new StreamingTextResponse(
+          new ReadableStream({
+            start(controller) {
+              controller.enqueue(new TextEncoder().encode(
+                `Sorry, I encountered an error while processing your copy trading request: ${error instanceof Error ? error.message : 'Unknown error'}. Please try again later.`
+              ));
+              controller.close();
+            },
+          })
+        );
+      }
     }
-  }
-
+  } else if (intent === "swap_tokens") {
   // Step 2: Check if this is a swap query
   const swapParams = extractSwapParams(lastMessage);
   if (swapParams) {
@@ -529,31 +647,7 @@ export async function POST(req: Request) {
       );
     }
   }
-
-  // Step 3: Check if this is a yield query
-  const yieldMatch = lastMessage.match(/(?:best|highest|top)\s+(?:yield|apy|interest|returns?)\s+(?:for|on)\s+(\d+)?\s*([a-z]{3,4})/i);
-  if (yieldMatch) {
-    const token = extractToken(lastMessage);
-    if (token) {
-      try {
-        const opportunities = await defiService.getYieldOpportunities(token);
-        const timestamp = getFormattedTimestamp();
-        return new StreamingTextResponse(
-          new ReadableStream({
-            start(controller) {
-              controller.enqueue(new TextEncoder().encode(
-                formatYieldComparison(opportunities, token, timestamp)
-              ));
-              controller.close();
-            },
-          })
-        );
-      } catch (error) {
-        console.error('Error fetching yield opportunities:', error);
-      }
-    }
-  }
-
+  } else if (intent === "lending_rates") {
   // Step 4: Check if this is a lending rate query
   const lendingMatch = lastMessage.match(/(?:lending|borrow(?:ing)?|supply|deposit)\s+(?:rates?|apy|interest)\s+(?:for|on)?\s*([a-z]{3,4})/i);
   if (lendingMatch) {
@@ -614,13 +708,40 @@ export async function POST(req: Request) {
       }
     }
   }
-
-  // Check for advanced research with metadata
-  if (isAdvancedResearchQuery(lastMessage, metadata)) {
+  } else if (intent === "market_analysis") {
+    // Step 1: Check if this is a market analysis or price prediction query
+    if (isMarketAnalysisQuery(lastMessage)) {
+      const defiService = await import('@/services/defiService').then(mod => mod.default);
+      
+      try {
+        // Extract topic from the message
+        let topic = lastMessage;
+        if (lastMessage.includes('price prediction')) {
+          topic = 'price prediction';
+        } else if (lastMessage.includes('sentiment')) {
+          topic = 'market sentiment';
+        } else if (lastMessage.includes('analysis')) {
+          topic = 'market analysis';
+        }
+        
+        console.log(`[API] Generating market analysis for topic: ${topic}`);
+        const analysis = await defiService.getMarketAnalysis(topic);
+        
+        return new Response(analysis, {
+          headers: { 'Content-Type': 'text/plain' },
+        });
+      } catch (error) {
+        console.error('Error generating market analysis:', error);
+        return new Response(
+          `I'm sorry, I couldn't generate a market analysis at this time. The error was: ${error instanceof Error ? error.message : 'Unknown error'}`,
+          { headers: { 'Content-Type': 'text/plain' } }
+        );
+      }
+    }
+  } else if (isAdvancedResearchQuery(lastMessage, metadata)) {
     console.log("[API] Handling advanced research query");
     return await handleAdvancedResearch(lastMessage, metadata);
-  }
-
+  } else {
   // Step 5: If none of the specialized handlers matched, use OpenAI with web search
   console.log('[API] No specialized handler matched, using OpenAI web search');
   
@@ -670,5 +791,6 @@ export async function POST(req: Request) {
         },
       })
     );
+    }  
   }  
 } 

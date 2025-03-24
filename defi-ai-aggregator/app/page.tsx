@@ -16,6 +16,8 @@ import { TokenType } from '@/services/constants';
 import defiService from '@/services/defiService';
 import AdvancedResearchModal, { AdvancedResearchData } from '@/components/AdvancedResearchModal';
 import { nanoid } from 'nanoid';
+import CopyTradingAnalysis from '@/components/CopyTradingAnalysis';
+import TopTraders from '@/components/TopTraders';
 
 // Dynamically import components that might cause hydration issues
 const ChatMessage = dynamic(() => import('@/components/ChatMessage'), { ssr: false });
@@ -54,6 +56,8 @@ export default function Home() {
   const [initialQueryProcessed, setInitialQueryProcessed] = useState(false);
   const [showAdvancedResearch, setShowAdvancedResearch] = useState(false);
   const [advancedResearchData, setAdvancedResearchData] = useState<AdvancedResearchData | null>(null);
+  const [copyTradingAddress, setCopyTradingAddress] = useState<string | null>(null);
+  const [showTopTraders, setShowTopTraders] = useState(false);
 
   // Set client-side state once mounted to prevent hydration mismatch
   useEffect(() => {
@@ -559,6 +563,18 @@ Would you like me to explain more about any specific opportunity?`;
     setTimeout(() => {
       handleSubmitWithIntentDetection(event);
     }, 100); // Small delay to ensure input is updated
+
+    // Check if this is a copy trading request
+    const copyAddress = extractCopyTradingAddress(input);
+    if (copyAddress) {
+      setCopyTradingAddress(copyAddress);
+    }
+
+    // Check if this is a request to view top traders
+    if (query.toLowerCase().includes("top traders") && 
+        (query.toLowerCase().includes("copy") || query.toLowerCase().includes("follow"))) {
+      setShowTopTraders(true);
+    }
   };
 
   // Handle form submission with intent detection
@@ -566,6 +582,30 @@ Would you like me to explain more about any specific opportunity?`;
     e.preventDefault();
     
     if (!input.trim()) return;
+    
+    // Check if this is a copy trading request
+    const copyAddress = extractCopyTradingAddress(input);
+    if (copyAddress) {
+      setCopyTradingAddress(copyAddress);
+    }
+    
+    // Check for top traders request with more patterns
+    const topTradersPatterns = [
+      /top\s+traders/i,
+      /best\s+traders/i,
+      /recommended\s+traders/i,
+      /traders\s+to\s+copy/i,
+      /copy\s+trad(e|ing).*traders/i,
+      /show.*top.*traders/i,
+      /show.*traders.*copy/i,
+      /find.*traders/i
+    ];
+    
+    const isTopTradersRequest = topTradersPatterns.some(pattern => pattern.test(input));
+    if (isTopTradersRequest) {
+      console.log("Top traders request detected in UI", input);
+      setShowTopTraders(true);
+    }
     
     // First, add the user message to the chat
     const userMessage = input.trim();
@@ -1269,6 +1309,62 @@ Would you like me to explain more about any specific opportunity?`;
           onSubmit={handleAdvancedResearchSubmit}
         />
       )}
+
+      {/* Copy Trading Analysis Modal */}
+      {copyTradingAddress && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-50">
+          <CopyTradingAnalysis 
+            address={copyTradingAddress} 
+            onClose={() => setCopyTradingAddress(null)} 
+          />
+        </div>
+      )}
+
+      {/* Top Traders Modal */}
+      {showTopTraders && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-50">
+          <div className="w-full max-w-4xl mx-auto bg-gray-800 rounded-xl shadow-lg overflow-hidden">
+            <div className="p-6">
+              <div className="flex justify-between items-start">
+                <h2 className="text-2xl font-semibold text-white">Top Traders</h2>
+                <button 
+                  onClick={() => setShowTopTraders(false)}
+                  className="text-gray-400 hover:text-white"
+                >
+                  ✕
+                </button>
+              </div>
+              <div className="mt-6">
+                <TopTraders onSelectTrader={handleSelectTrader} />
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </main>
   );
 }
+
+// Helper function to extract copy trading address from a message
+const extractCopyTradingAddress = (content: string): string | null => {
+  const addressMatch = content.match(/(?:copy\s+trad(?:e|ing)|follow\s+trader|analyze\s+trader|track\s+wallet).*?(0x[0-9a-fA-F]{1,64})/i);
+  if (addressMatch && addressMatch[1]) {
+    return addressMatch[1];
+  }
+  return null;
+};
+
+// Make sure these handlers are correctly implemented
+const handleCloseCopyTrading = () => {
+  setCopyTradingAddress(null);
+};
+
+const handleSelectTrader = (address: string) => {
+  console.log("Selected trader for analysis:", address);
+  setCopyTradingAddress(address);
+  setShowTopTraders(false);
+};
+
+const handleCloseTopTraders = () => {
+  setShowTopTraders(false);
+};

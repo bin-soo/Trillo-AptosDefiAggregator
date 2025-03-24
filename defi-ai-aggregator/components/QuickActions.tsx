@@ -8,8 +8,9 @@ import {
   WalletIcon,
   BeakerIcon,
   ShieldCheckIcon,
-  CodeBracketIcon
+  CodeBracketIcon,
 } from '@heroicons/react/24/outline';
+import { UserPlus } from 'lucide-react';
 
 interface QuickActionsProps {
   onActionClick: (query: string) => void;
@@ -77,6 +78,15 @@ export default function QuickActions({ onActionClick }: QuickActionsProps) {
       color: 'from-cyan-600 to-sky-700',
       textColor: 'text-cyan-300',
       borderColor: 'border-cyan-800'
+    },
+    {
+      title: 'Copy Trading',
+      description: 'Follow top traders',
+      query: 'Show me top Aptos traders I can copy trade from',
+      icon: <UserPlus className="h-6 w-6" />,
+      color: 'from-pink-600 to-rose-700',
+      textColor: 'text-pink-300',
+      borderColor: 'border-pink-800'
     }
   ];
 
