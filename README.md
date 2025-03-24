@@ -2,7 +2,7 @@
 
 Trillo is an intelligent DeFi aggregator built on the Aptos blockchain that simplifies complex DeFi operations through a conversational AI interface. It provides seamless access to optimal swaps, yield farming opportunities, copy trading, and comprehensive market analysis—all in one unified platform.
 
-For better preview and visualization, please use main branch code for swap-related operations with automatic chat transactions and geekNoSwap for the remaining copy trading, market intelligence, etc.
+For better preview and visualization, please use ``main`` branch code for swap-related operations with automatic chat transactions and ``geekNoSwap`` for the remaining copy trading, market intelligence, etc.
 
 ## 🚀 Features
 
