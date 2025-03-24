@@ -140,7 +140,7 @@ export default function MarketDashboard() {
                 </div>
               </div>
               
-              <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div className="bg-gray-900/70 rounded-lg p-3 border border-gray-800">
                   <p className="text-xs text-gray-500 font-mono">TOTAL_TVL</p>
                   <p className="text-xl font-semibold text-white">{formatCurrency(marketData.ecosystem.totalTVL)}</p>
@@ -152,14 +152,6 @@ export default function MarketDashboard() {
                 <div className="bg-gray-900/70 rounded-lg p-3 border border-gray-800">
                   <p className="text-xs text-gray-500 font-mono">24H_VOLUME</p>
                   <p className="text-xl font-semibold text-white">{formatCurrency(marketData.ecosystem.volume24h)}</p>
-                </div>
-                <div className="bg-gray-900/70 rounded-lg p-3 border border-gray-800">
-                  <p className="text-xs text-gray-500 font-mono">ACTIVE_USERS</p>
-                  <p className="text-xl font-semibold text-white">{marketData.ecosystem.activeUsers.toLocaleString()}</p>
-                </div>
-                <div className="bg-gray-900/70 rounded-lg p-3 border border-gray-800">
-                  <p className="text-xs text-gray-500 font-mono">24H_TXS</p>
-                  <p className="text-xl font-semibold text-white">{marketData.ecosystem.transactions24h.toLocaleString()}</p>
                 </div>
               </div>
             </div>

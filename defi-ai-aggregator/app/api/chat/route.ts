@@ -440,32 +440,28 @@ function isCopyTradingRequest(message: string): { isRequest: boolean; address?: 
 // More advanced intent detection system
 function detectMessageIntent(message: string): string {
   const lowercaseMsg = message.toLowerCase();
-  console.log("[detectIntent] Analyzing message:", lowercaseMsg);
+  console.log(`[detectIntent] Analyzing message: ${lowercaseMsg}`);
   
-  // Define intent keywords with weights
+  // Define intents with their keywords and initial scores
   const intents = {
-    "top_traders": {
-      keywords: ["top traders", "best traders", "recommended traders", "traders to copy", 
-                "show traders", "find traders", "copy trading list", "who to follow"],
+    top_traders: {
+      keywords: ['top trader', 'best trader', 'copy trade', 'follow trader', 'successful trader'],
       score: 0
     },
-    "copy_specific_trader": {
-      keywords: ["copy trading from", "follow trader", "copy trader", "analyze trader", 
-                "track wallet", "copy address", "follow address"],
+    copy_specific_trader: {
+      keywords: ['analyze trader', 'trader profile', 'trader analysis', 'copy specific', 'trader history'],
       score: 0
     },
-    "swap_tokens": {
-      keywords: ["swap", "exchange", "trade", "convert", " to ", "for"],
+    swap_tokens: {
+      keywords: ['swap', 'exchange', 'trade', 'convert', 'change'],
       score: 0
     },
-    "lending_rates": {
-      keywords: ["lending rates", "borrow rates", "interest rates", "deposit rates", 
-                "apy", "interest", "yield"],
+    lending_rates: {
+      keywords: ['lending', 'lend', 'apy', 'interest', 'yield', 'earn'],
       score: 0
     },
-    "market_analysis": {
-      keywords: ["market analysis", "price prediction", "forecast", "outlook", 
-                "sentiment", "trend"],
+    market_analysis: {
+      keywords: ['market', 'price', 'trend', 'analysis', 'predict', 'sentiment', 'outlook', 'chart'],
       score: 0
     }
   };
@@ -475,15 +471,37 @@ function detectMessageIntent(message: string): string {
     const intent = intents[intentKey];
     intent.keywords.forEach(keyword => {
       if (lowercaseMsg.includes(keyword)) {
-        intent.score += 1;
+        // Add additional weight for exact matches or phrases
+        if (lowercaseMsg.includes(` ${keyword} `)) {
+          intent.score += 2; // Higher score for phrases with spaces around
+        } else {
+          intent.score += 1;
+        }
         console.log(`[detectIntent] Matched keyword '${keyword}' for intent '${intentKey}'`);
       }
     });
   });
   
-  // Get highest scoring intent
+  // Apply contextual rules to avoid false positives
+  
+  // Rule 1: Penalize swap_tokens intent when common words like "for" appear without specific swap context
+  if (intents.swap_tokens.score === 1 && lowercaseMsg.includes('for') && 
+      !lowercaseMsg.includes('swap') && !lowercaseMsg.includes('trade')) {
+    intents.swap_tokens.score -= 1;
+    console.log(`[detectIntent] Penalized swap_tokens intent (-1) due to weak context`);
+  }
+  
+  // Rule 2: Boost market_analysis score when specific market terms are used
+  if (lowercaseMsg.includes('sentiment') || 
+      lowercaseMsg.includes('analysis') || 
+      lowercaseMsg.includes('market')) {
+    intents.market_analysis.score += 1;
+    console.log(`[detectIntent] Boosted market_analysis intent (+1) due to strong market context`);
+  }
+  
+  // Find the intent with the highest score
   let highestScore = 0;
-  let detectedIntent = "unknown";
+  let detectedIntent = 'general';
   
   Object.keys(intents).forEach(intentKey => {
     if (intents[intentKey].score > highestScore) {
@@ -493,32 +511,20 @@ function detectMessageIntent(message: string): string {
   });
   
   console.log(`[detectIntent] Detected intent: ${detectedIntent} with score ${highestScore}`);
-  return highestScore > 0 ? detectedIntent : "unknown";
+  return detectedIntent;
 }
 
 export async function POST(req: Request) {
-  // Log the entire request body for debugging
-  const body = await req.json();
-  console.log("[API] Full request body:", JSON.stringify(body, null, 2));
+  const { messages, data } = await req.json();
+  const lastMessage = messages[messages.length - 1];
+  const userMessage = lastMessage.content;
+  const stream = true;
+  const encoder = new TextEncoder();
   
-  // Extract messages and metadata
-  const { messages, data } = body;
-  const metadata = data?.metadata;
+  console.log("[API] Chat request received:", userMessage);
   
-  console.log("[API] Extracted metadata:", JSON.stringify(metadata, null, 2));
-  
-  const lastMessage = messages[messages.length - 1].content;
-  const lastMessageLower = lastMessage.toLowerCase();
-
-  // Add logging to debug
-  console.log("[API] Request received", { 
-    messageContent: lastMessage,
-    messageCount: messages.length, 
-    hasMetadata: !!metadata 
-  });
-
-  // Use intent detection
-  const intent = detectMessageIntent(lastMessage);
+  // Detect intent from the user's message
+  const intent = detectMessageIntent(userMessage);
   console.log("[API] Detected intent:", intent);
   
   // Handle based on intent
@@ -537,7 +543,7 @@ export async function POST(req: Request) {
       })
     );
   } else if (intent === "copy_specific_trader") {
-    const copyTradingCheck = isCopyTradingRequest(lastMessage);
+    const copyTradingCheck = isCopyTradingRequest(userMessage);
     if (copyTradingCheck.isRequest && copyTradingCheck.address) {
       try {
         // Check if the address is valid
@@ -589,7 +595,7 @@ export async function POST(req: Request) {
     }
   } else if (intent === "swap_tokens") {
   // Step 2: Check if this is a swap query
-  const swapParams = extractSwapParams(lastMessage);
+  const swapParams = extractSwapParams(userMessage);
   if (swapParams) {
     try {
       console.log('Extracted swap params:', swapParams);
@@ -649,12 +655,12 @@ export async function POST(req: Request) {
   }
   } else if (intent === "lending_rates") {
   // Step 4: Check if this is a lending rate query
-  const lendingMatch = lastMessage.match(/(?:lending|borrow(?:ing)?|supply|deposit)\s+(?:rates?|apy|interest)\s+(?:for|on)?\s*([a-z]{3,4})/i);
+  const lendingMatch = userMessage.match(/(?:lending|borrow(?:ing)?|supply|deposit)\s+(?:rates?|apy|interest)\s+(?:for|on)?\s*([a-z]{3,4})/i);
   if (lendingMatch) {
-    const token = lastMessage.includes('usdc') ? 'USDC' : 
-                  lastMessage.includes('apt') ? 'APT' :
-                  lastMessage.includes('usdt') ? 'USDT' :
-                  lastMessage.includes('dai') ? 'DAI' : null;
+    const token = userMessage.includes('usdc') ? 'USDC' : 
+                  userMessage.includes('apt') ? 'APT' :
+                  userMessage.includes('usdt') ? 'USDT' :
+                  userMessage.includes('dai') ? 'DAI' : null;
     
     if (token) {
       try {
@@ -679,7 +685,7 @@ export async function POST(req: Request) {
           );
         }
 
-        const ratesMessage = lastMessage.includes('all pools') ?
+        const ratesMessage = userMessage.includes('all pools') ?
           formatAllLendingRates(lendingRates, token, timestamp) :
           formatLendingRatesResponse(lendingRates, token, timestamp);
 
@@ -710,17 +716,17 @@ export async function POST(req: Request) {
   }
   } else if (intent === "market_analysis") {
     // Step 1: Check if this is a market analysis or price prediction query
-    if (isMarketAnalysisQuery(lastMessage)) {
+    if (isMarketAnalysisQuery(userMessage)) {
       const defiService = await import('@/services/defiService').then(mod => mod.default);
       
       try {
         // Extract topic from the message
-        let topic = lastMessage;
-        if (lastMessage.includes('price prediction')) {
+        let topic = userMessage;
+        if (userMessage.includes('price prediction')) {
           topic = 'price prediction';
-        } else if (lastMessage.includes('sentiment')) {
+        } else if (userMessage.includes('sentiment')) {
           topic = 'market sentiment';
-        } else if (lastMessage.includes('analysis')) {
+        } else if (userMessage.includes('analysis')) {
           topic = 'market analysis';
         }
         
@@ -738,9 +744,9 @@ export async function POST(req: Request) {
         );
       }
     }
-  } else if (isAdvancedResearchQuery(lastMessage, metadata)) {
+  } else if (isAdvancedResearchQuery(userMessage, data)) {
     console.log("[API] Handling advanced research query");
-    return await handleAdvancedResearch(lastMessage, metadata);
+    return await handleAdvancedResearch(userMessage, data);
   } else {
   // Step 5: If none of the specialized handlers matched, use OpenAI with web search
   console.log('[API] No specialized handler matched, using OpenAI web search');
@@ -793,4 +799,10 @@ export async function POST(req: Request) {
     );
     }  
   }  
+  
+  // Add a default fallback response to ensure we always return something
+  return new Response(
+    encoder.encode(`I'm processing your request about ${userMessage}. Please wait a moment...`),
+    { headers: { 'Content-Type': 'text/plain; charset=utf-8' } }
+  );
 } 

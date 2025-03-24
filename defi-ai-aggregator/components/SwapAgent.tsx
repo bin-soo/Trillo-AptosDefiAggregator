@@ -155,6 +155,22 @@ export default function SwapAgent({
     }
   };
 
+  // Add better error handling
+  const handleSwapError = (error: any) => {
+    let errorMessage = "Transaction failed";
+    
+    if (typeof error === 'string' && error.includes("No valid route found")) {
+      errorMessage = "No valid swap route found between these tokens. This may be due to insufficient liquidity. Try a different amount or token pair.";
+    } else if (error instanceof Error) {
+      errorMessage = `Transaction failed: ${error.message}`;
+    } else if (typeof error === 'object' && error !== null) {
+      errorMessage = `Transaction failed: ${JSON.stringify(error)}`;
+    }
+    
+    setError(errorMessage);
+    setIsExecuting(false);
+  };
+
   // Return a placeholder while not mounted to prevent hydration issues
   if (!isMounted) {
     return <div className="bg-white rounded-xl shadow-md p-6 border border-gray-200 h-[400px]"></div>;

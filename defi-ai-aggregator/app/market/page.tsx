@@ -62,7 +62,7 @@ export default function MarketPage() {
           <div className="flex items-center space-x-4">
             <Link href="/" className="flex items-center space-x-2">
               <AptosLogo />
-              <span className="font-semibold text-xl">DeFi AI Advisor</span>
+              <span className="font-semibold text-xl">DeFi AI Aggregator</span>
             </Link>
           </div>
           

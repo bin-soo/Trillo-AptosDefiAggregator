@@ -74,7 +74,7 @@ export class SwapService {
     amount: string,
     walletAddress?: string | undefined
   ): Promise<SwapRoute> {
-    console.log(`Getting best swap route for ${amount} ${tokenIn} to ${tokenOut}`);
+    console.log(`[SwapService] Getting best swap route for ${amount} ${tokenIn} to ${tokenOut}`);
     
     try {
       // Always use APTOS_COINS for token information, regardless of network
@@ -161,14 +161,92 @@ export class SwapService {
           dexUrl: "https://app.panora.exchange"
         };
         
+        // Add better error handling and fallback logic
+        if (!swapRoute || !swapRoute.expectedOutput) {
+          console.log('[SwapService] No direct route found, attempting to find indirect route');
+          
+          // Try intermediate routes via stable coins if direct route fails
+          const stableCoins = ['USDC', 'USDT', 'DAI'];
+          
+          // Only try intermediate routing if tokenIn and tokenOut aren't both stable coins
+          if (!(stableCoins.includes(tokenIn as string) && stableCoins.includes(tokenOut as string))) {
+            // Try routing through APT first
+            if (tokenIn !== 'APT' && tokenOut !== 'APT') {
+              try {
+                const routeToAPT = await this.getDirectRoute(tokenIn, 'APT' as TokenType, amount);
+                if (routeToAPT && routeToAPT.expectedOutput) {
+                  const routeFromAPT = await this.getDirectRoute('APT' as TokenType, tokenOut, routeToAPT.expectedOutput);
+                  if (routeFromAPT && routeFromAPT.expectedOutput) {
+                    console.log('[SwapService] Found indirect route via APT');
+                    return {
+                      tokenIn: { symbol: tokenIn, address: this.dexService.getTokenAddress(tokenIn as any) },
+                      tokenOut: { symbol: tokenOut, address: this.dexService.getTokenAddress(tokenOut as any) },
+                      amount,
+                      expectedOutput: routeFromAPT.expectedOutput,
+                      protocol: `${routeToAPT.protocol} → ${routeFromAPT.protocol}`,
+                      priceImpact: (parseFloat(routeToAPT.priceImpact) + parseFloat(routeFromAPT.priceImpact)).toFixed(2),
+                      estimatedGas: (parseFloat(routeToAPT.estimatedGas) + parseFloat(routeFromAPT.estimatedGas)).toFixed(6),
+                      dexUrl: routeToAPT.dexUrl,
+                      isMultiHop: true,
+                      hops: [
+                        { from: tokenIn, to: 'APT', protocol: routeToAPT.protocol, amount, output: routeToAPT.expectedOutput },
+                        { from: 'APT', to: tokenOut, protocol: routeFromAPT.protocol, amount: routeToAPT.expectedOutput, output: routeFromAPT.expectedOutput }
+                      ]
+                    };
+                  }
+                }
+              } catch (error) {
+                console.log('[SwapService] Error finding route via APT:', error);
+              }
+            }
+            
+            // Try routing through stable coins
+            for (const stableCoin of stableCoins) {
+              if (tokenIn !== stableCoin && tokenOut !== stableCoin) {
+                try {
+                  const routeToStable = await this.getDirectRoute(tokenIn, stableCoin as TokenType, amount);
+                  if (routeToStable && routeToStable.expectedOutput) {
+                    const routeFromStable = await this.getDirectRoute(stableCoin as TokenType, tokenOut, routeToStable.expectedOutput);
+                    if (routeFromStable && routeFromStable.expectedOutput) {
+                      console.log(`[SwapService] Found indirect route via ${stableCoin}`);
+                      return {
+                        tokenIn: { symbol: tokenIn, address: this.dexService.getTokenAddress(tokenIn as any) },
+                        tokenOut: { symbol: tokenOut, address: this.dexService.getTokenAddress(tokenOut as any) },
+                        amount,
+                        expectedOutput: routeFromStable.expectedOutput,
+                        protocol: `${routeToStable.protocol} → ${routeFromStable.protocol}`,
+                        priceImpact: (parseFloat(routeToStable.priceImpact) + parseFloat(routeFromStable.priceImpact)).toFixed(2),
+                        estimatedGas: (parseFloat(routeToStable.estimatedGas) + parseFloat(routeFromStable.estimatedGas)).toFixed(6),
+                        dexUrl: routeToStable.dexUrl,
+                        isMultiHop: true,
+                        hops: [
+                          { from: tokenIn, to: stableCoin, protocol: routeToStable.protocol, amount, output: routeToStable.expectedOutput },
+                          { from: stableCoin, to: tokenOut, protocol: routeFromStable.protocol, amount: routeToStable.expectedOutput, output: routeFromStable.expectedOutput }
+                        ]
+                      };
+                    }
+                  }
+                } catch (error) {
+                  console.log(`[SwapService] Error finding route via ${stableCoin}:`, error);
+                }
+              }
+            }
+          }
+          
+          // If all attempts fail, use fallback route generation
+          console.log('[SwapService] No valid routes found, using fallback route generation');
+          return await this.getFallbackSwapRoute(tokenIn, tokenOut, amount);
+        }
+        
         return swapRoute;
       } else {
         console.log("No quotes found from Panora, falling back to alternative method");
         return this.getFallbackSwapRoute(tokenIn, tokenOut, amount);
       }
     } catch (error) {
-      console.error("Error getting swap route from Panora:", error);
-      return this.getFallbackSwapRoute(tokenIn, tokenOut, amount);
+      console.error('[SwapService] Error getting swap route:', error);
+      // Instead of throwing, provide a fallback route
+      return await this.getFallbackSwapRoute(tokenIn, tokenOut, amount);
     }
   }
 
@@ -180,55 +258,59 @@ export class SwapService {
     tokenOut: TokenType,
     amount: string
   ): Promise<SwapRoute> {
+    console.log(`[SwapService] Using fallback swap route for ${amount} ${tokenIn} to ${tokenOut}`);
+    
     try {
-      const inputAmt = parseFloat(amount);
+      // Try to get a real route first
+      return await this.generateFallbackSwapRoute(tokenIn, tokenOut, amount);
+    } catch (error) {
+      console.error('[SwapService] Error generating fallback route:', error);
       
-      // Get quotes from all DEXes
-      const allQuotes = await this.dexService.getAllDexQuotes(tokenIn, tokenOut, inputAmt);
+      // As a last resort, create a synthetic route with estimated values
+      const priceService = await import('./priceService').then(mod => mod.default);
       
-      // Filter out null quotes and sort by output amount (descending)
-      const validQuotes = allQuotes
-        .filter(quote => quote !== null) as any[];
-      
-      validQuotes.sort((a, b) => 
-        parseFloat(b.outputAmount) - parseFloat(a.outputAmount)
-      );
-      
-      if (validQuotes.length === 0) {
-        throw new Error('No valid quotes available');
+      // Get token prices (with fallbacks if API fails)
+      let tokenInPrice = 1, tokenOutPrice = 1;
+      try {
+        tokenInPrice = await priceService.getTokenPrice(tokenIn);
+        tokenOutPrice = await priceService.getTokenPrice(tokenOut);
+      } catch {
+        // Use fallback price estimates
+        const fallbackPrices: Record<string, number> = {
+          'APT': 6.75,
+          'USDC': 1.0,
+          'USDT': 1.0,
+          'DAI': 1.0
+        };
+        tokenInPrice = fallbackPrices[tokenIn as string] || 1;
+        tokenOutPrice = fallbackPrices[tokenOut as string] || 1;
       }
       
-      // Get the best quote
-      const bestQuote = validQuotes[0];
+      // Calculate an estimated output based on price ratio
+      const amountNum = parseFloat(amount);
+      const expectedOutput = ((amountNum * tokenInPrice) / tokenOutPrice).toFixed(6);
       
-      // Calculate price impact as a number
-      const priceImpact = parseFloat(bestQuote.priceImpact);
-      
-      // Return the swap route
+      // Return a synthetic route
       return {
-        fromToken: tokenIn,
-        toToken: tokenOut,
-        fromAmount: amount,
-        expectedOutput: bestQuote.outputAmount,
-        priceImpact: priceImpact,
-        estimatedGas: bestQuote.gasEstimate || 0.0002,
-        dex: bestQuote.dexName,
-        protocol: bestQuote.dexName,
-        alternativeRoutes: validQuotes.slice(1).map(quote => ({
-          protocol: quote.dexName,
-          expectedOutput: quote.outputAmount,
-          priceImpact: quote.priceImpact,
-          estimatedGas: quote.gasEstimate || 0.0002
-        }))
+        tokenIn: { 
+          symbol: tokenIn, 
+          address: this.dexService.getTokenAddress(tokenIn as any),
+          decimals: tokenIn === 'APT' ? 8 : 6 
+        },
+        tokenOut: { 
+          symbol: tokenOut, 
+          address: this.dexService.getTokenAddress(tokenOut as any),
+          decimals: tokenOut === 'APT' ? 8 : 6
+        },
+        amount,
+        expectedOutput,
+        protocol: "Synthetic Route",
+        priceImpact: "0.5",
+        estimatedGas: "0.0003",
+        dexUrl: "https://app.pancakeswap.finance/swap",
+        synthetic: true,  // Flag to indicate this is a synthetic route
+        warning: "This is an estimated route. Actual execution may vary."
       };
-    } catch (error) {
-      console.error('Error getting fallback swap quotes:', {
-        error: error instanceof Error ? error.message : error,
-        params: { tokenIn, tokenOut, amount }
-      });
-      
-      // Return a generated fallback route
-      return this.generateFallbackSwapRoute(tokenIn, tokenOut, amount);
     }
   }
   
@@ -410,6 +492,38 @@ export class SwapService {
     const multiplier = Math.pow(10, decimals);
     const formattedAmount = (amount * multiplier).toFixed(0);
     return formattedAmount;
+  }
+
+  // Add this helper method
+  private async getDirectRoute(tokenIn: TokenType, tokenOut: TokenType, amount: string): Promise<SwapRoute | null> {
+    try {
+      // Get quotes from all DEXes
+      const quotes = await this.dexService.getAllDexQuotes(tokenIn, tokenOut, parseFloat(amount));
+      const validQuotes = quotes.filter(q => q !== null) as DexQuote[];
+      
+      if (validQuotes.length === 0) {
+        return null;
+      }
+      
+      // Sort by output amount (descending)
+      validQuotes.sort((a, b) => parseFloat(b.outputAmount) - parseFloat(a.outputAmount));
+      
+      const bestQuote = validQuotes[0];
+      
+      return {
+        tokenIn: { symbol: tokenIn, address: this.dexService.getTokenAddress(tokenIn as any) },
+        tokenOut: { symbol: tokenOut, address: this.dexService.getTokenAddress(tokenOut as any) },
+        amount,
+        expectedOutput: bestQuote.outputAmount,
+        protocol: bestQuote.dexName,
+        priceImpact: bestQuote.priceImpact,
+        estimatedGas: bestQuote.gasEstimate?.toString() || '0.0002',
+        dexUrl: bestQuote.dexUrl
+      };
+    } catch (error) {
+      console.error(`[SwapService] Error getting direct route from ${tokenIn} to ${tokenOut}:`, error);
+      return null;
+    }
   }
 }
 

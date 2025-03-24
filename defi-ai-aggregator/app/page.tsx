@@ -1109,7 +1109,7 @@ Would you like me to explain more about any specific opportunity?`;
               </button>
               <Link href="/" className="flex items-center space-x-2">
                 <AptosLogo />
-                <span className="font-semibold text-xl">DeFi AI Advisor</span>
+                <span className="font-semibold text-xl">DeFi AI Aggregator</span>
               </Link>
             </div>
             
