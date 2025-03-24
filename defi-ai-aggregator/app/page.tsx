@@ -7,7 +7,7 @@ import Link from 'next/link';
 import { useWallet } from '@aptos-labs/wallet-adapter-react';
 import { useNetwork } from './providers';
 import { useSearchParams, useRouter } from 'next/navigation';
-import { CommandLineIcon, ChartBarIcon, CodeBracketIcon, Bars3Icon } from '@heroicons/react/24/outline';
+import { CommandLineIcon, ChartBarIcon, CodeBracketIcon, Bars3Icon, BeakerIcon } from '@heroicons/react/24/outline';
 import { SparklesIcon } from '@heroicons/react/24/solid';
 import AptosLogo from '@/components/AptosLogo';
 import WalletConnect from '@/components/WalletConnect';
@@ -24,13 +24,24 @@ const Sidebar = dynamic(() => import('@/components/Sidebar'), { ssr: false });
 const QuickActions = dynamic(() => import('@/components/QuickActions'), { ssr: false });
 const FloatingSuggestions = dynamic(() => import('@/components/FloatingSuggestions'), { ssr: false });
 
-// Define a custom message type that includes action
+// Define a proper CustomMessage type
 interface CustomMessage extends Message {
   action?: DeFiAction;
+  id: string;
+  role: 'user' | 'assistant' | 'system';
+  content: string;
 }
 
 export default function Home() {
-  const { messages, input, handleInputChange, handleSubmit: originalHandleSubmit, setInput, setMessages, isLoading } = useChat();
+  const { 
+    messages: originalMessages, 
+    input, 
+    handleInputChange, 
+    handleSubmit: originalHandleSubmit, 
+    setInput, 
+    setMessages: originalSetMessages, 
+    isLoading 
+  } = useChat<CustomMessage>();
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isTestnet, setIsTestnet] = useState(true);
   const [chatHistory, setChatHistory] = useState<{ id: string; question: string; timestamp: Date }[]>([]);
@@ -86,7 +97,7 @@ export default function Home() {
         });
       }, 100);
     }
-  }, [messages]);
+  }, [originalMessages]);
 
   // Add another effect to scroll to bottom when a new message is being typed
   useEffect(() => {
@@ -102,7 +113,7 @@ export default function Home() {
   useEffect(() => {
     if (!isClient) return;
     
-    const userMessages = messages.filter(msg => msg.role === 'user');
+    const userMessages = originalMessages.filter(msg => msg.role === 'user');
     if (userMessages.length > 0) {
       const lastUserMessage = userMessages[userMessages.length - 1];
       setChatHistory(prev => [
@@ -114,7 +125,7 @@ export default function Home() {
         }
       ]);
     }
-  }, [messages, isClient]);
+  }, [originalMessages, isClient]);
 
   // Toggle sidebar
   const toggleSidebar = () => {
@@ -130,7 +141,7 @@ export default function Home() {
     defiService.setTestnetMode(newNetwork === 'testnet');
     
     // Add a system message about the network change
-    setMessages(prev => [
+    originalSetMessages(prev => [
       ...prev,
       {
         id: Date.now().toString(),
@@ -181,7 +192,7 @@ export default function Home() {
     if (isSwapIntent) {
       // Add a temporary message while fetching the swap route
       const tempMessageId = Date.now().toString();
-      setMessages(prev => [
+      originalSetMessages(prev => [
         ...prev,
         {
           id: tempMessageId,
@@ -225,7 +236,7 @@ ${route.alternativeRoutes.map(alt =>
 Would you like me to execute this swap for you? Click the "Execute Swap" button below or reply with "yes" to confirm.`;
         
         // Update the temporary message with the actual response and attach the action
-        setMessages(messages => 
+        originalSetMessages(messages => 
           messages.map(msg => 
             msg.id === tempMessageId 
               ? { ...msg, content: responseContent, action: swapAction } 
@@ -236,7 +247,7 @@ Would you like me to execute this swap for you? Click the "Execute Swap" button 
         console.error('Error getting swap route:', error);
         
         // Update the temporary message with an error
-        setMessages(messages => 
+        originalSetMessages(messages => 
           messages.map(msg => 
             msg.id === tempMessageId 
               ? { ...msg, content: `Sorry, I couldn't find a swap route for ${amount} ${tokenIn} to ${tokenOut}. Please try again with different tokens or amount.` } 
@@ -256,7 +267,7 @@ Would you like me to execute this swap for you? Click the "Execute Swap" button 
     const confirmationRegex = /yes|confirm|execute|proceed|do it|swap it/i;
     if (confirmationRegex.test(userMessage)) {
       // Find the last swap action
-      const lastSwapAction = [...messages]
+      const lastSwapAction = [...originalMessages]
         .reverse()
         .find(msg => msg.role === 'assistant' && msg.action?.type === 'swap');
       
@@ -265,7 +276,7 @@ Would you like me to execute this swap for you? Click the "Execute Swap" button 
         
         // Add a confirmation message
         const confirmationId = Date.now().toString();
-        setMessages(prev => [
+        originalSetMessages(prev => [
           ...prev,
           {
             id: confirmationId,
@@ -276,7 +287,7 @@ Would you like me to execute this swap for you? Click the "Execute Swap" button 
         
         // Check if wallet is connected
         if (!connected || !account) {
-          setMessages(prev => [
+          originalSetMessages(prev => [
             ...prev,
             {
               id: Date.now().toString(),
@@ -307,7 +318,7 @@ Would you like me to execute this swap for you? Click the "Execute Swap" button 
           
           if (result.success) {
             // Update with success message
-            setMessages(prev => [
+            originalSetMessages(prev => [
               ...prev,
             {
               id: Date.now().toString(),
@@ -323,7 +334,7 @@ The swap of ${route.amount || route.fromAmount} ${route.tokenIn?.symbol || route
             ]);
           } else {
             // Update with error message
-            setMessages(prev => [
+            originalSetMessages(prev => [
               ...prev,
               {
                 id: Date.now().toString(),
@@ -339,7 +350,7 @@ Please try again or adjust your swap parameters.`
           console.error('Error executing swap:', error);
           
           // Update with error message
-          setMessages(prev => [
+          originalSetMessages(prev => [
             ...prev,
             {
               id: Date.now().toString(),
@@ -371,7 +382,7 @@ Please try again or adjust your swap parameters.`
     if (isPortfolioIntent) {
       // Check if wallet is connected
       if (!connected || !account) {
-        setMessages(prev => [
+        originalSetMessages(prev => [
           ...prev,
           {
             id: Date.now().toString(),
@@ -384,7 +395,7 @@ Please try again or adjust your swap parameters.`
       
       // Add a temporary message while analyzing the portfolio
       const tempMessageId = Date.now().toString();
-      setMessages(prev => [
+      originalSetMessages(prev => [
         ...prev,
         {
           id: tempMessageId,
@@ -415,7 +426,7 @@ Please try again or adjust your swap parameters.`
 Would you like me to suggest specific actions to optimize your portfolio?`;
         
         // Update the temporary message with the actual response
-        setMessages(messages => 
+        originalSetMessages(messages => 
           messages.map(msg => 
             msg.id === tempMessageId 
               ? { ...msg, content: responseContent } 
@@ -426,7 +437,7 @@ Would you like me to suggest specific actions to optimize your portfolio?`;
         console.error('Error analyzing portfolio:', error);
         
         // Update the temporary message with an error
-        setMessages(messages => 
+        originalSetMessages(messages => 
           messages.map(msg => 
             msg.id === tempMessageId 
               ? { ...msg, content: `Sorry, I couldn't analyze your portfolio at this time. Please try again later.` } 
@@ -476,7 +487,7 @@ Would you like me to suggest specific actions to optimize your portfolio?`;
     if (isYieldIntent) {
       // Add a temporary message while fetching yield opportunities
       const tempMessageId = Date.now().toString();
-      setMessages(prev => [
+      originalSetMessages(prev => [
         ...prev,
         {
           id: tempMessageId,
@@ -509,7 +520,7 @@ ${opportunities.liquidity.slice(0, 3).map(pool =>
 Would you like me to explain more about any specific opportunity?`;
         
         // Update the temporary message with the actual response
-        setMessages(messages => 
+        originalSetMessages(messages => 
           messages.map(msg => 
             msg.id === tempMessageId 
               ? { ...msg, content: responseContent } 
@@ -520,7 +531,7 @@ Would you like me to explain more about any specific opportunity?`;
         console.error('Error finding yield opportunities:', error);
         
         // Update the temporary message with an error
-        setMessages(messages => 
+        originalSetMessages(messages => 
           messages.map(msg => 
             msg.id === tempMessageId 
               ? { ...msg, content: `Sorry, I couldn't find yield opportunities for ${amount} ${token} at this time. Please try again later.` } 
@@ -585,40 +596,44 @@ Would you like me to explain more about any specific opportunity?`;
   // Create a custom chat function that allows passing metadata
   const chat = async ({ messages, data }: { messages: any[], data: any }) => {
     try {
+      // Call the API with the messages
       const response = await fetch('/api/chat', {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json',
+          'Content-Type': 'application/json'
         },
         body: JSON.stringify({
           messages,
-          data,
-        }),
+          data
+        })
       });
       
       if (!response.ok) {
-        throw new Error(`Error: ${response.status}`);
+        throw new Error(`Error from API: ${response.status}`);
       }
       
-      const reader = response.body?.getReader();
-      if (!reader) throw new Error('Response body is null');
-      
-      // Process the streaming response
-      const decoder = new TextDecoder();
-      let done = false;
-      let accumulatedContent = '';
-      
-      while (!done) {
-        const { value, done: doneReading } = await reader.read();
-        done = doneReading;
+      // Handle streaming response
+      if (response.body) {
+        const reader = response.body.getReader();
+        let accumulatedContent = '';
         
-        if (value) {
-          const chunkText = decoder.decode(value, { stream: !done });
-          accumulatedContent += chunkText;
+        // Process the stream
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
           
-          // Update the AI message as chunks arrive
-          setMessages(currentMessages => {
-            const last = currentMessages[currentMessages.length - 1];
+          // Decode the chunk and append to accumulated content
+          const chunk = new TextDecoder().decode(value);
+          accumulatedContent += chunk;
+          
+          // Update the UI with the accumulated content
+          originalSetMessages(currentMessages => {
+            // Handle case where currentMessages is undefined
+            if (!currentMessages || !Array.isArray(currentMessages)) {
+              return [{ id: nanoid(), role: 'assistant', content: accumulatedContent }];
+            }
+            
+            const last = currentMessages.length > 0 ? currentMessages[currentMessages.length - 1] : null;
             
             // If the last message is from the assistant, update it
             if (last?.role === 'assistant') {
@@ -641,51 +656,148 @@ Would you like me to explain more about any specific opportunity?`;
     } catch (error) {
       console.error('Error in chat function:', error);
       // Add error handling UI update here
-      setMessages(currentMessages => [
-        ...currentMessages,
-        { 
-          id: nanoid(), 
-          role: 'assistant', 
-          content: 'Sorry, I encountered an error processing your request. Please try again.'
-        }
-      ]);
+      originalSetMessages(currentMessages => {
+        // Handle case where currentMessages is undefined
+        const safeCurrentMessages = currentMessages || [];
+        return [
+          ...safeCurrentMessages,
+          { 
+            id: nanoid(), 
+            role: 'assistant', 
+            content: 'Sorry, I encountered an error processing your request. Please try again.'
+          }
+        ];
+      });
     }
   };
 
   // Add a handler for submitting advanced research
   const handleAdvancedResearchSubmit = async (data: AdvancedResearchData) => {
-    console.log("Advanced research submitted:", data);
-    setAdvancedResearchData(data);
+    // Close the modal
+    setShowAdvancedResearch(false);
     
-    // Create a chat message with the research query
-    const userMessage = {
-      id: nanoid(),
-      role: 'user' as const,
-      content: data.query,
-    };
+    // Add user message to chat
+    const userMessageId = nanoid();
+    setMessages(prev => [
+      ...prev,
+      {
+        id: userMessageId,
+        role: 'user',
+        content: data.query
+      }
+    ]);
     
-    // Add the user message to the UI
-    setMessages((current) => [...current, userMessage]);
+    // Add a temporary assistant message that will be updated
+    const assistantMessageId = nanoid();
+    setMessages(prev => [
+      ...prev,
+      {
+        id: assistantMessageId,
+        role: 'assistant',
+        content: `Researching "${data.query}"...`
+      }
+    ]);
     
-    // Clear the input
-    setInput('');
-    
-    // Create the metadata for the API
-    const metadata = {
-      isAdvancedResearch: true,
-      researchType: data.researchType,
-      sources: data.sources,
-      depth: data.depth,
-      customInstructions: data.customInstructions
-    };
-    
-    console.log("Sending metadata to API:", metadata);
-    
-    // Use the custom chat function with metadata
-    await chat({
-      messages: [...messages, userMessage],
-      data: { metadata }
-    });
+    try {
+      // Call the API with the right configuration
+      const response = await fetch('/api/chat', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          messages: [{ role: 'user', content: data.query }],
+          data: {
+            metadata: {
+              isAdvancedResearch: true,
+              useMorphic: data.useMorphic,
+              researchType: data.researchType,
+              depth: data.depth,
+              sources: data.sources,
+              customInstructions: data.customInstructions
+            }
+          }
+        })
+      });
+      
+      if (!response.ok) {
+        throw new Error(`Error from API: ${response.status}`);
+      }
+      
+      if (response.body) {
+        const reader = response.body.getReader();
+        let accumulatedContent = '';
+        
+        // Process the stream
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          
+          // Decode the chunk as text
+          const text = new TextDecoder().decode(value);
+          // Simple check to avoid JSON parsing - if it looks like JSON, extract content
+          if (text.startsWith('{') && text.includes('choices')) {
+            try {
+              // Try to parse as JSON and extract content from each chunk
+              const lines = text.split('\n').filter(line => line.trim());
+              for (const line of lines) {
+                try {
+                  const json = JSON.parse(line);
+                  const content = json.choices?.[0]?.delta?.content || '';
+                  if (content) {
+                    accumulatedContent += content;
+                  }
+                } catch {
+                  // If can't parse as JSON, just use the text directly
+                  accumulatedContent += line;
+                }
+              }
+            } catch {
+              // If JSON parsing fails, just append the raw text
+              accumulatedContent += text;
+            }
+          } else {
+            // If it doesn't look like JSON, just append the text
+            accumulatedContent += text;
+          }
+          
+          // Update the message with the accumulated content
+          setMessages(prev => 
+            prev.map(msg => 
+              msg.id === assistantMessageId 
+                ? { ...msg, content: accumulatedContent } 
+                : msg
+            )
+          );
+        }
+      }
+    } catch (error) {
+      console.error('Error in research:', error);
+      
+      // Update message with error
+      setMessages(prev => 
+        prev.map(msg => 
+          msg.id === assistantMessageId 
+            ? { ...msg, content: `Error while researching: ${error instanceof Error ? error.message : 'Unknown error'}` } 
+            : msg
+        )
+      );
+    }
+  };
+
+  // Create type-safe versions of the functions
+  const messages = originalMessages as CustomMessage[];
+  const setMessages = (
+    updater: CustomMessage[] | ((messages: CustomMessage[]) => CustomMessage[])
+  ) => {
+    if (typeof updater === 'function') {
+      originalSetMessages(messages => {
+        const safeMsgs = messages as CustomMessage[] || [];
+        return updater(safeMsgs) as Message[];
+      });
+    } else {
+      originalSetMessages(updater as Message[]);
+    }
   };
 
   // Show a loading state during SSR or before client hydration
@@ -766,6 +878,14 @@ Would you like me to explain more about any specific opportunity?`;
                 >
                   <ChartBarIcon className="h-5 w-5" />
                   <span className="hidden md:inline text-sm">Markets</span>
+                </Link>
+                <Link 
+                  href="/morphic-test"
+                  className="p-2 rounded-lg hover:bg-gray-700 text-gray-300 flex items-center space-x-1"
+                  title="Morphic Test"
+                >
+                  <BeakerIcon className="h-5 w-5" />
+                  <span className="hidden md:inline text-sm">Morphic</span>
                 </Link>
                 <button 
                   onClick={toggleNetwork}
@@ -977,6 +1097,14 @@ Would you like me to explain more about any specific opportunity?`;
               >
                 <ChartBarIcon className="h-5 w-5" />
                 <span className="hidden md:inline text-sm">Markets</span>
+              </Link>
+              <Link 
+                href="/morphic-test"
+                className="p-2 rounded-lg hover:bg-gray-700 text-gray-300 flex items-center space-x-1"
+                title="Morphic Test"
+              >
+                <BeakerIcon className="h-5 w-5" />
+                <span className="hidden md:inline text-sm">Morphic</span>
               </Link>
               <button 
                 onClick={toggleNetwork}

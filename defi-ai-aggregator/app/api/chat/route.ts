@@ -4,6 +4,7 @@ import { Configuration, OpenAIApi } from 'openai-edge';
 import defiService from '@/services/defiService';
 import { LendingInfo, SwapRoute } from '@/types/defi';
 import { APTOS_COINS, APTOS_TESTNET_COINS } from '@/services/constants';
+import { OpenAIStream } from 'ai';
 
 // Initialize OpenAI Edge client
 const config = new Configuration({
@@ -305,114 +306,119 @@ function isMarketAnalysisQuery(message: string): boolean {
 
 // Add a new function to detect advanced research queries
 function isAdvancedResearchQuery(message: string, metadata?: any): boolean {
-  // Check if the message has advanced research metadata
-  console.log("[Advanced Research] is advanced research:", metadata);
-  if (metadata?.isAdvancedResearch) {
-    
-    return true;
-  }
-  
-  // Otherwise check if the message contains research keywords
-  const researchKeywords = [
-    'advanced research',
-    'deep dive',
-    'comprehensive analysis',
-    'research this topic',
-    'technical analysis'
-  ];
-  
-  return researchKeywords.some(keyword => 
-    message.toLowerCase().includes(keyword)
-  );
+  return !!metadata?.isAdvancedResearch;
 }
 
 // Add a function to handle advanced research
-async function handleAdvancedResearch(message: string, metadata?: any): Promise<string> {
-  // Prepare research parameters
+async function handleAdvancedResearch(message: string, metadata?: any): Promise<any> {
+  console.log("Handling advanced research query with metadata:", metadata);
+  
+  try {
+    // Use Morphic search for research when requested
+    if (metadata?.useMorphic) {
+      // Create structured messages for Morphic chat
+      const systemMessage = `You are a specialized research assistant focusing on ${metadata.researchType || 'comprehensive'} research.
+      Conduct a ${metadata.depth || 'detailed'} analysis of the user's query.
+      Focus on these information sources: ${(metadata.sources || ['web']).join(', ')}.
+      ${metadata.customInstructions ? `Additional instructions: ${metadata.customInstructions}` : ''}
+      Format your response in markdown with proper citations.`;
+      
+      const requestMessages = [
+        { role: 'system', content: systemMessage },
+        { role: 'user', content: message }
+      ];
+      
+      try {
+        // Stream the response directly
+        const response = await fetch(`${process.env.VERCEL_URL || 'http://localhost:3000'}/api/morphic/chat`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            messages: requestMessages
+          })
+        });
+        
+        if (!response.ok) {
+          throw new Error(`Error from Morphic chat: ${response.status}`);
+        }
+        
+        // Return the response directly as a streaming response
+        return new StreamingTextResponse(response.body as ReadableStream);
+      } catch (error) {
+        console.error("Error in Morphic chat:", error);
+        throw error; // Let the outer catch block handle it
+      }
+    } else {
+      // Use your existing OpenAI method for standard research
+      const openai = new OpenAI({
+        apiKey: process.env.OPENAI_API_KEY,
+      });
+      
+      const prompt = generateResearchPrompt(message, metadata);
+      
+      const stream = await openai.chat.completions.create({
+        model: "gpt-4-turbo-preview",
+        messages: [{ role: "user", content: prompt }],
+        temperature: 0.7,
+        max_tokens: 2500,
+        stream: true
+      });
+      
+      return new StreamingTextResponse(stream.toReadableStream());
+    }
+  } catch (error) {
+    console.error("Error in handleAdvancedResearch:", error);
+    return new StreamingTextResponse(
+      new ReadableStream({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode(
+            `I encountered an error while researching "${message}": ${error instanceof Error ? error.message : 'Unknown error'}. Please try again or modify your query.`
+          ));
+          controller.close();
+        }
+      })
+    );
+  }
+}
+
+// Add this helper function
+function generateResearchPrompt(query: string, metadata?: any): string {
   const researchType = metadata?.researchType || 'comprehensive';
-  const sources = metadata?.sources || ['web', 'aptos_docs'];
-  const depth = metadata?.depth || 'deep';
+  const depth = metadata?.depth || 'detailed';
+  const sources = metadata?.sources || ['web'];
   const customInstructions = metadata?.customInstructions || '';
   
-  console.log("[Advanced Research] Processing request:", { 
-    researchType, 
-    sources, 
-    depth, 
-    hasCustomInstructions: !!customInstructions 
-  });
-
-  // Create a system prompt based on the research parameters
-  let systemPrompt = `You are an expert DeFi researcher focusing on the Aptos blockchain ecosystem. `;
+  let prompt = `Conduct a ${depth} research on "${query}" focusing on ${researchType} information.`;
   
-  // Add research type instructions
-  if (researchType === 'technical') {
-    systemPrompt += `Provide a technical deep-dive with code examples, architecture details, and implementation specifics. `;
-  } else if (researchType === 'competitor') {
-    systemPrompt += `Compare different protocols, examining their strengths, weaknesses, and unique features. `;
-  } else if (researchType === 'comprehensive') {
-    systemPrompt += `Deliver a comprehensive analysis covering technical aspects, market implications, risks, and opportunities. `;
+  // Add source preferences
+  prompt += `\nFocus on these information sources: ${sources.join(', ')}.`;
+  
+  // Add depth-specific instructions
+  if (depth === 'basic') {
+    prompt += '\nProvide a concise overview with key points only.';
+  } else if (depth === 'detailed') {
+    prompt += '\nProvide a thorough analysis with specific examples and evidence.';
+  } else if (depth === 'exhaustive') {
+    prompt += '\nProvide an exhaustive analysis with detailed explanations, multiple perspectives, and in-depth examination of nuances.';
   }
   
-  // Add depth instructions
-  if (depth === 'expert') {
-    systemPrompt += `Your response should be extremely detailed, citing specific implementations, algorithms, and technical specifications. `;
-  } else if (depth === 'deep') {
-    systemPrompt += `Provide an in-depth analysis with substantive details and examples. `;
-  } else {
-    systemPrompt += `Offer a clear and accessible overview with key points and examples. `;
-  }
-  
-  // Add source instructions
-  if (sources.includes('web')) {
-    systemPrompt += `Incorporate the latest information available online. `;
-  }
-  if (sources.includes('aptos_docs')) {
-    systemPrompt += `Reference official Aptos documentation when applicable. `;
-  }
-  if (sources.includes('defi_protocols')) {
-    systemPrompt += `Analyze relevant DeFi protocols on Aptos including their documentation and whitepapers. `;
-  }
-  if (sources.includes('aptos_code')) {
-    systemPrompt += `Examine relevant Move code and smart contracts when appropriate. `;
+  // Add research type specific instructions
+  if (researchType === 'defi') {
+    prompt += '\nFocus on DeFi aspects, financial implications, market trends, tokenomics, and blockchain-specific details.';
+  } else if (researchType === 'academic') {
+    prompt += '\nApproach this from an academic perspective with emphasis on theories, methodologies, and scholarly research.';
   }
   
   // Add custom instructions if provided
   if (customInstructions) {
-    systemPrompt += `Additional instructions: ${customInstructions}`;
+    prompt += `\nAdditional instructions: ${customInstructions}`;
   }
   
-  try {
-    // Import the OpenAI SDK properly
-    const { OpenAI } = await import('openai');
-    
-    // Initialize the client with your API key
-    const openai = new OpenAI({
-      apiKey: process.env.OPENAI_API_KEY,
-    });
-    
-    console.log("[Advanced Research] Sending request to OpenAI");
-    
-    const completion = await openai.chat.completions.create({
-      model: "gpt-4-turbo",
-      messages: [
-        {
-          role: "system",
-          content: systemPrompt
-        },
-        {
-          role: "user",
-          content: message
-        }
-      ],
-      temperature: 0.7,
-      max_tokens: 4000,
-    });
-
-    return completion.choices[0].message.content || "I couldn't complete the research at this time.";
-  } catch (error) {
-    console.error("Advanced research error:", error);
-    return "I encountered an error while conducting this research. Please try again with a more specific query.";
-  }
+  prompt += '\nFormat your response in markdown with clear headings, bullet points where appropriate, and cite sources.';
+  
+  return prompt;
 }
 
 export async function POST(req: Request) {
@@ -609,21 +615,10 @@ export async function POST(req: Request) {
     }
   }
 
-  // Check if this is an advanced research query
+  // Check for advanced research with metadata
   if (isAdvancedResearchQuery(lastMessage, metadata)) {
-    // Handle the advanced research query
-    console.log("[Advanced Research] Metadata:", metadata);
-    const researchResponse = await handleAdvancedResearch(lastMessage, metadata);
-    
-    // Return the response
-    return new StreamingTextResponse(
-      new ReadableStream({
-        start(controller) {
-          controller.enqueue(new TextEncoder().encode(researchResponse));
-          controller.close();
-        }
-      })
-    );
+    console.log("[API] Handling advanced research query");
+    return await handleAdvancedResearch(lastMessage, metadata);
   }
 
   // Step 5: If none of the specialized handlers matched, use OpenAI with web search

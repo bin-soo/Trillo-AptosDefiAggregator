@@ -1,20 +1,21 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { XMarkIcon, BeakerIcon, DocumentTextIcon, LinkIcon, AcademicCapIcon } from '@heroicons/react/24/outline';
+import { XMarkIcon, BeakerIcon, MagnifyingGlassIcon, AcademicCapIcon, GlobeAltIcon, DocumentTextIcon, HashtagIcon, CheckIcon } from '@heroicons/react/24/outline';
+
+export interface AdvancedResearchData {
+  query: string;
+  researchType: 'web' | 'academic' | 'code' | 'defi' | 'comprehensive';
+  sources: string[];
+  depth: 'basic' | 'detailed' | 'exhaustive';
+  customInstructions?: string;
+  useMorphic?: boolean; // New property to choose the research engine
+}
 
 interface AdvancedResearchModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSubmit: (data: AdvancedResearchData) => void;
-}
-
-export interface AdvancedResearchData {
-  query: string;
-  researchType: 'comprehensive' | 'technical' | 'competitor' | 'custom';
-  sources: string[];
-  depth: 'basic' | 'deep' | 'expert';
-  customInstructions?: string;
 }
 
 export default function AdvancedResearchModal({ isOpen, onClose, onSubmit }: AdvancedResearchModalProps) {
@@ -23,55 +24,64 @@ export default function AdvancedResearchModal({ isOpen, onClose, onSubmit }: Adv
   const [formData, setFormData] = useState<AdvancedResearchData>({
     query: '',
     researchType: 'comprehensive',
-    sources: ['web', 'aptos_docs', 'defi_protocols'],
-    depth: 'deep',
+    sources: ['web'],
+    depth: 'detailed',
     customInstructions: '',
+    useMorphic: true // Default to using Morphic
   });
 
-  // Handle animation and mounting
+  // Set mounted state on client-side only
   useEffect(() => {
     setIsMounted(true);
+    
+    // Add animation delay
     if (isOpen) {
-      setTimeout(() => setAnimateIn(true), 10);
+      setTimeout(() => {
+        setAnimateIn(true);
+      }, 10);
     } else {
       setAnimateIn(false);
     }
-  }, [isOpen]);
+    
+    // Handle escape key to close modal
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    
+    window.addEventListener('keydown', handleEscape);
+    return () => window.removeEventListener('keydown', handleEscape);
+  }, [isOpen, onClose]);
+
+  const handleClose = () => {
+    setAnimateIn(false);
+    setTimeout(onClose, 300); // Wait for animation to finish
+  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    
-    // Log the data being submitted
-    console.log("Submitting research data:", formData);
-    
-    // Make sure all required fields have values
-    const dataToSubmit = {
-      ...formData,
-      query: formData.query.trim(),
-      researchType: formData.researchType || 'comprehensive',
-      sources: formData.sources.length ? formData.sources : ['web', 'aptos_docs'],
-      depth: formData.depth || 'deep',
-    };
-    
-    onSubmit(dataToSubmit);
-    onClose();
-  };
-
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
-    const { name, value } = e.target;
-    setFormData(prev => ({ ...prev, [name]: value }));
+    onSubmit(formData);
+    handleClose();
   };
 
   const handleSourceToggle = (source: string) => {
     setFormData(prev => {
-      const newSources = prev.sources.includes(source)
+      const sources = prev.sources.includes(source) 
         ? prev.sources.filter(s => s !== source)
         : [...prev.sources, source];
-      return { ...prev, sources: newSources };
+        
+      // Ensure at least one source is selected
+      return {
+        ...prev,
+        sources: sources.length ? sources : ['web']
+      };
     });
   };
 
-  if (!isMounted || !isOpen) return null;
+  // Don't render anything during SSR
+  if (!isMounted) return null;
+  
+  // Don't render if not open
+  if (!isOpen) return null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
@@ -87,7 +97,7 @@ export default function AdvancedResearchModal({ isOpen, onClose, onSubmit }: Adv
             <h2 className="text-xl font-bold text-white">Advanced Research</h2>
           </div>
           <button 
-            onClick={onClose}
+            onClick={handleClose}
             className="p-1 rounded-lg hover:bg-gray-800 text-gray-400 hover:text-white"
           >
             <XMarkIcon className="h-6 w-6" />
@@ -95,181 +105,193 @@ export default function AdvancedResearchModal({ isOpen, onClose, onSubmit }: Adv
         </div>
         
         {/* Form */}
-        <form onSubmit={handleSubmit} className="p-6 space-y-6">
-          {/* Research Query */}
-          <div className="space-y-2">
-            <label htmlFor="query" className="block text-sm font-medium text-gray-300">
-              Research Question
-            </label>
-            <input
-              type="text"
-              id="query"
-              name="query"
-              value={formData.query}
-              onChange={handleChange}
-              required
-              placeholder="What specific topic do you want to research?"
-              className="w-full px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent text-white placeholder-gray-500"
-            />
+        <form onSubmit={handleSubmit} className="p-6">
+          {/* Query */}
+          <div className="mb-6">
+            <label className="block text-white font-medium mb-2">Research Query</label>
+            <div className="relative">
+              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                <MagnifyingGlassIcon className="h-5 w-5 text-gray-400" />
+              </div>
+              <input
+                type="text"
+                value={formData.query}
+                onChange={(e) => setFormData({...formData, query: e.target.value})}
+                placeholder="Enter your research question..."
+                className="w-full bg-gray-800 border border-gray-700 rounded-lg pl-10 py-3 px-4 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                required
+              />
+            </div>
           </div>
           
-          {/* Research Type */}
-          <div className="space-y-2">
-            <label htmlFor="researchType" className="block text-sm font-medium text-gray-300">
-              Research Type
-            </label>
-            <select
-              id="researchType"
-              name="researchType"
-              value={formData.researchType}
-              onChange={handleChange}
-              className="w-full px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent text-white"
-            >
-              <option value="comprehensive">Comprehensive Analysis</option>
-              <option value="technical">Technical Deep-Dive</option>
-              <option value="competitor">Protocol Comparison</option>
-              <option value="custom">Custom Research</option>
-            </select>
-          </div>
-          
-          {/* Sources */}
-          <div className="space-y-2">
-            <label className="block text-sm font-medium text-gray-300">
-              Research Sources
-            </label>
+          {/* Research Engine */}
+          <div className="mb-6">
+            <label className="block text-white font-medium mb-2">Research Engine</label>
             <div className="grid grid-cols-2 gap-3">
               <button
                 type="button"
-                onClick={() => handleSourceToggle('web')}
-                className={`flex items-center space-x-2 px-3 py-2 rounded-lg border ${
-                  formData.sources.includes('web')
-                    ? 'bg-purple-900/30 border-purple-600 text-purple-300'
-                    : 'bg-gray-800 border-gray-700 text-gray-400'
-                }`}
-              >
-                <LinkIcon className="h-5 w-5" />
-                <span>Web Search</span>
-              </button>
-              
-              <button
-                type="button"
-                onClick={() => handleSourceToggle('aptos_docs')}
-                className={`flex items-center space-x-2 px-3 py-2 rounded-lg border ${
-                  formData.sources.includes('aptos_docs')
-                    ? 'bg-blue-900/30 border-blue-600 text-blue-300'
-                    : 'bg-gray-800 border-gray-700 text-gray-400'
-                }`}
-              >
-                <DocumentTextIcon className="h-5 w-5" />
-                <span>Aptos Docs</span>
-              </button>
-              
-              <button
-                type="button"
-                onClick={() => handleSourceToggle('defi_protocols')}
-                className={`flex items-center space-x-2 px-3 py-2 rounded-lg border ${
-                  formData.sources.includes('defi_protocols')
-                    ? 'bg-green-900/30 border-green-600 text-green-300'
-                    : 'bg-gray-800 border-gray-700 text-gray-400'
+                onClick={() => setFormData({...formData, useMorphic: true})}
+                className={`flex items-center space-x-2 p-3 rounded-lg border transition-colors ${
+                  formData.useMorphic 
+                    ? 'bg-purple-900/40 border-purple-500 text-purple-300' 
+                    : 'bg-gray-800 border-gray-700 text-gray-300 hover:bg-gray-700'
                 }`}
               >
                 <AcademicCapIcon className="h-5 w-5" />
-                <span>DeFi Protocols</span>
+                <div className="text-left">
+                  <div className="font-medium">Morphic</div>
+                  <div className="text-xs opacity-70">Advanced AI with enhanced search and chat capabilities</div>
+                </div>
+                {formData.useMorphic && <CheckIcon className="h-5 w-5 ml-auto text-purple-400" />}
               </button>
               
               <button
                 type="button"
-                onClick={() => handleSourceToggle('aptos_code')}
-                className={`flex items-center space-x-2 px-3 py-2 rounded-lg border ${
-                  formData.sources.includes('aptos_code')
-                    ? 'bg-yellow-900/30 border-yellow-600 text-yellow-300'
-                    : 'bg-gray-800 border-gray-700 text-gray-400'
+                onClick={() => setFormData({...formData, useMorphic: false})}
+                className={`flex items-center space-x-2 p-3 rounded-lg border transition-colors ${
+                  !formData.useMorphic 
+                    ? 'bg-blue-900/40 border-blue-500 text-blue-300' 
+                    : 'bg-gray-800 border-gray-700 text-gray-300 hover:bg-gray-700'
                 }`}
               >
-                <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
-                </svg>
-                <span>Move Code</span>
+                <BeakerIcon className="h-5 w-5" />
+                <div className="text-left">
+                  <div className="font-medium">Default</div>
+                  <div className="text-xs opacity-70">Basic research with our default AI</div>
+                </div>
+                {!formData.useMorphic && <CheckIcon className="h-5 w-5 ml-auto text-blue-400" />}
               </button>
+            </div>
+          </div>
+          
+          {/* Research Type */}
+          <div className="mb-6">
+            <label className="block text-white font-medium mb-2">Research Type</label>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              <button
+                type="button"
+                onClick={() => setFormData({...formData, researchType: 'comprehensive'})}
+                className={`flex items-center space-x-2 p-3 rounded-lg border transition-colors ${
+                  formData.researchType === 'comprehensive' 
+                    ? 'bg-blue-900/40 border-blue-500 text-blue-300' 
+                    : 'bg-gray-800 border-gray-700 text-gray-300 hover:bg-gray-700'
+                }`}
+              >
+                <GlobeAltIcon className="h-5 w-5" />
+                <span>Comprehensive</span>
+              </button>
+              
+              <button
+                type="button"
+                onClick={() => setFormData({...formData, researchType: 'defi'})}
+                className={`flex items-center space-x-2 p-3 rounded-lg border transition-colors ${
+                  formData.researchType === 'defi' 
+                    ? 'bg-green-900/40 border-green-500 text-green-300' 
+                    : 'bg-gray-800 border-gray-700 text-gray-300 hover:bg-gray-700'
+                }`}
+              >
+                <HashtagIcon className="h-5 w-5" />
+                <span>DeFi Specific</span>
+              </button>
+              
+              <button
+                type="button"
+                onClick={() => setFormData({...formData, researchType: 'academic'})}
+                className={`flex items-center space-x-2 p-3 rounded-lg border transition-colors ${
+                  formData.researchType === 'academic' 
+                    ? 'bg-yellow-900/40 border-yellow-500 text-yellow-300' 
+                    : 'bg-gray-800 border-gray-700 text-gray-300 hover:bg-gray-700'
+                }`}
+              >
+                <AcademicCapIcon className="h-5 w-5" />
+                <span>Academic</span>
+              </button>
+            </div>
+          </div>
+          
+          {/* Information Sources */}
+          <div className="mb-6">
+            <label className="block text-white font-medium mb-2">Information Sources</label>
+            <div className="flex flex-wrap gap-2">
+              {['web', 'docs', 'code', 'news', 'community'].map(source => (
+                <button
+                  key={source}
+                  type="button"
+                  onClick={() => handleSourceToggle(source)}
+                  className={`px-3 py-1 rounded-full text-sm transition-colors ${
+                    formData.sources.includes(source)
+                      ? 'bg-purple-900/60 text-purple-300 border border-purple-500'
+                      : 'bg-gray-800 text-gray-400 border border-gray-700 hover:bg-gray-700'
+                  }`}
+                >
+                  {source.charAt(0).toUpperCase() + source.slice(1)}
+                </button>
+              ))}
             </div>
           </div>
           
           {/* Research Depth */}
-          <div className="space-y-2">
-            <label className="block text-sm font-medium text-gray-300">
-              Research Depth
-            </label>
-            <div className="grid grid-cols-3 gap-3">
-              <button
-                type="button"
-                onClick={() => setFormData(prev => ({ ...prev, depth: 'basic' }))}
-                className={`px-3 py-2 rounded-lg border ${
-                  formData.depth === 'basic'
-                    ? 'bg-blue-900/30 border-blue-600 text-blue-300'
-                    : 'bg-gray-800 border-gray-700 text-gray-400'
-                }`}
-              >
-                Basic
-              </button>
+          <div className="mb-6">
+            <label className="block text-white font-medium mb-2">Research Depth</label>
+            <div className="flex flex-col space-y-2">
+              <label className="flex items-center space-x-2">
+                <input
+                  type="radio"
+                  checked={formData.depth === 'basic'}
+                  onChange={() => setFormData({...formData, depth: 'basic'})}
+                  className="w-4 h-4 text-purple-600 focus:ring-purple-500 border-gray-700 bg-gray-800 rounded"
+                />
+                <span className="text-gray-300">Basic (Quick overview)</span>
+              </label>
               
-              <button
-                type="button"
-                onClick={() => setFormData(prev => ({ ...prev, depth: 'deep' }))}
-                className={`px-3 py-2 rounded-lg border ${
-                  formData.depth === 'deep'
-                    ? 'bg-purple-900/30 border-purple-600 text-purple-300'
-                    : 'bg-gray-800 border-gray-700 text-gray-400'
-                }`}
-              >
-                Deep
-              </button>
+              <label className="flex items-center space-x-2">
+                <input
+                  type="radio"
+                  checked={formData.depth === 'detailed'}
+                  onChange={() => setFormData({...formData, depth: 'detailed'})}
+                  className="w-4 h-4 text-purple-600 focus:ring-purple-500 border-gray-700 bg-gray-800 rounded"
+                />
+                <span className="text-gray-300">Detailed (Comprehensive analysis)</span>
+              </label>
               
-              <button
-                type="button"
-                onClick={() => setFormData(prev => ({ ...prev, depth: 'expert' }))}
-                className={`px-3 py-2 rounded-lg border ${
-                  formData.depth === 'expert'
-                    ? 'bg-red-900/30 border-red-600 text-red-300'
-                    : 'bg-gray-800 border-gray-700 text-gray-400'
-                }`}
-              >
-                Expert
-              </button>
+              <label className="flex items-center space-x-2">
+                <input
+                  type="radio"
+                  checked={formData.depth === 'exhaustive'}
+                  onChange={() => setFormData({...formData, depth: 'exhaustive'})}
+                  className="w-4 h-4 text-purple-600 focus:ring-purple-500 border-gray-700 bg-gray-800 rounded"
+                />
+                <span className="text-gray-300">Exhaustive (Deep, thorough investigation)</span>
+              </label>
             </div>
           </div>
           
-          {/* Custom Instructions (shown only if Custom Research is selected) */}
-          {formData.researchType === 'custom' && (
-            <div className="space-y-2">
-              <label htmlFor="customInstructions" className="block text-sm font-medium text-gray-300">
-                Custom Instructions
-              </label>
-              <textarea
-                id="customInstructions"
-                name="customInstructions"
-                value={formData.customInstructions}
-                onChange={handleChange}
-                rows={4}
-                placeholder="Enter specific instructions for your research. For example: Compare the governance models of top 3 Aptos DeFi protocols..."
-                className="w-full px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent text-white placeholder-gray-500"
-              />
-            </div>
-          )}
+          {/* Custom Instructions */}
+          <div className="mb-6">
+            <label className="block text-white font-medium mb-2">Custom Instructions (Optional)</label>
+            <textarea
+              value={formData.customInstructions}
+              onChange={(e) => setFormData({...formData, customInstructions: e.target.value})}
+              placeholder="Add any specific focus areas or requirements..."
+              className="w-full bg-gray-800 border border-gray-700 rounded-lg py-3 px-4 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent resize-none h-24"
+            />
+          </div>
           
           {/* Actions */}
-          <div className="flex justify-end space-x-3 pt-4 border-t border-gray-800">
+          <div className="flex justify-end space-x-3">
             <button
               type="button"
-              onClick={onClose}
+              onClick={handleClose}
               className="px-4 py-2 bg-gray-800 text-gray-300 rounded-lg hover:bg-gray-700"
             >
               Cancel
             </button>
             <button
               type="submit"
-              className="px-4 py-2 bg-gradient-to-r from-purple-600 to-blue-600 text-white rounded-lg hover:from-purple-500 hover:to-blue-500"
+              className="px-4 py-2 bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-lg hover:from-blue-500 hover:to-purple-500 flex items-center space-x-2"
             >
-              Start Research
+              <BeakerIcon className="h-5 w-5" />
+              <span>Start Research</span>
             </button>
           </div>
         </form>
