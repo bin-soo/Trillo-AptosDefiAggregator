@@ -9,8 +9,8 @@ module.exports = {
     extend: {
       colors: {
         aptos: {
-          blue: '#2DD8F5',
-          purple: '#8B5CF6',
+          blue: '#20B2AA',
+          purple: '#FFA500',
           'light-blue': '#E5F9FD',
           'light-purple': '#EDE9FE',
         },

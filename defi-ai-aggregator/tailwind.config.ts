@@ -24,8 +24,8 @@ const config: Config = {
           900: '#0c4a6e',
         },
         aptos: {
-          blue: '#2DD8F5',
-          purple: '#8B5CF6',
+          blue: '#5cedd5',
+          purple: '#edbb3e',
           'light-blue': '#E5F9FD',
           'light-purple': '#EDE9FE',
         },
@@ -46,7 +46,7 @@ const config: Config = {
         },
       },
       backgroundImage: {
-        'gradient-aptos': 'linear-gradient(to right, #2DD8F5, #8B5CF6)',
+        'gradient-aptos': 'linear-gradient(to right, #FFA500, #20B2AA)',
         'gradient-aptos-light': 'linear-gradient(to right, #E5F9FD, #EDE9FE)',
       },
     },

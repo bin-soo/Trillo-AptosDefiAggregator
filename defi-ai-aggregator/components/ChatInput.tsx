@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
-import { PaperAirplaneIcon, MicrophoneIcon, LightBulbIcon } from '@heroicons/react/24/solid';
+import { PaperAirplaneIcon, MicrophoneIcon, LightBulbIcon, ArrowUpIcon } from '@heroicons/react/24/solid';
 import { CommandLineIcon, BeakerIcon } from '@heroicons/react/24/outline';
 
 interface ChatInputProps {
@@ -10,6 +10,8 @@ interface ChatInputProps {
   handleSubmit: (e: React.FormEvent<HTMLFormElement>) => void;
   isConnected: boolean;
   onAdvancedResearch?: () => void;
+  isLoading: boolean;
+  isEmptyMessage: boolean;
 }
 
 export default function ChatInput({ 
@@ -17,7 +19,9 @@ export default function ChatInput({
   handleInputChange, 
   handleSubmit, 
   isConnected, 
-  onAdvancedResearch 
+  onAdvancedResearch, 
+  isLoading, 
+  isEmptyMessage
 }: ChatInputProps) {
   const [isFocused, setIsFocused] = useState(false);
   const [isMounted, setIsMounted] = useState(false);
@@ -101,22 +105,14 @@ export default function ChatInput({
           {/* Submit button */}
           <button
             type="submit"
-            onClick={(e) => {
-              e.preventDefault();
-              if (input.trim()) {
-                const formEvent = new Event('submit', { cancelable: true }) as any;
-                handleSubmit(formEvent);
-              }
-            }}
-            disabled={!input.trim()}
-            className={`p-2 rounded-lg ${
-              input.trim()
-                ? 'bg-blue-600 text-white hover:bg-blue-500'
-                : 'bg-gray-700 text-gray-400 cursor-not-allowed'
-            } transition-colors`}
-            title="Send message"
+            disabled={isLoading || isEmptyMessage}
+            className={`flex items-center justify-center p-1.5 rounded-lg ${
+              isEmptyMessage
+                ? 'bg-gray-800 text-gray-500'
+                : 'bg-gradient-to-r from-teal-500 to-amber-500 text-black hover:from-teal-400 hover:to-amber-400'
+            }`}
           >
-            <PaperAirplaneIcon className="h-5 w-5" />
+            <ArrowUpIcon className="h-4 w-4" />
           </button>
         </div>
       </div>

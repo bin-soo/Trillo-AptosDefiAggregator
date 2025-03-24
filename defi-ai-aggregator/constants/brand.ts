@@ -3,6 +3,8 @@ export const APTOS_COLORS = {
     blue: '#2DD8F5',
     purple: '#8B5CF6',
     black: '#000000',
+    teal: '#5cedd5',
+    amber: '#edbb3e',
   },
   secondary: {
     lightBlue: '#E5F9FD',
@@ -11,6 +13,7 @@ export const APTOS_COLORS = {
   gradient: {
     primary: 'from-[#2DD8F5] to-[#8B5CF6]',
     light: 'from-[#E5F9FD] to-[#EDE9FE]',
+    new: 'from-[#5cedd5] to-[#edbb3e]',
   }
 };
 

@@ -879,14 +879,6 @@ Would you like me to explain more about any specific opportunity?`;
                   <ChartBarIcon className="h-5 w-5" />
                   <span className="hidden md:inline text-sm">Markets</span>
                 </Link>
-                <Link 
-                  href="/morphic-test"
-                  className="p-2 rounded-lg hover:bg-gray-700 text-gray-300 flex items-center space-x-1"
-                  title="Morphic Test"
-                >
-                  <BeakerIcon className="h-5 w-5" />
-                  <span className="hidden md:inline text-sm">Morphic</span>
-                </Link>
                 <button 
                   onClick={toggleNetwork}
                   className={`px-3 py-1 rounded-lg text-sm font-mono ${
@@ -910,11 +902,11 @@ Would you like me to explain more about any specific opportunity?`;
                 <div className="max-w-2xl w-full space-y-8">
                   <div className="text-center">
                     <div className="flex justify-center mb-6">
-                      <div className="h-16 w-16 rounded-full bg-blue-500/20 flex items-center justify-center">
-                        <SparklesIcon className="h-8 w-8 text-blue-400" />
+                      <div className="h-16 w-16 rounded-full bg-teal-500/60 flex items-center justify-center">
+                        <SparklesIcon className="h-8 w-8 text-teal-400" />
                       </div>
                     </div>
-                    <h1 className="text-3xl font-bold text-blue-300 mb-2">Aptos DeFi AI Assistant</h1>
+                    <h1 className="text-3xl font-bold text-teal-300 mb-2">Aptos DeFi AI Assistant</h1>
                     <p className="text-gray-400 max-w-md mx-auto">
                       Your AI-powered guide to navigating the Aptos DeFi ecosystem. Ask about swaps, yields, market analysis, and more.
                     </p>
@@ -985,7 +977,7 @@ Would you like me to explain more about any specific opportunity?`;
               <div className="flex-1 flex flex-col items-center justify-center p-4">
                 <div className="max-w-2xl w-full space-y-8">
                   <div className="text-center">
-                    <div className="h-16 w-16 rounded-full bg-blue-500/20 animate-pulse mx-auto mb-6"></div>
+                    <div className="h-16 w-16 rounded-full bg-teal-500/20 animate-pulse mx-auto mb-6"></div>
                     <div className="h-8 w-48 bg-gray-800 animate-pulse mx-auto mb-2 rounded"></div>
                     <div className="h-4 w-64 bg-gray-800 animate-pulse mx-auto rounded"></div>
                   </div>
@@ -1098,14 +1090,6 @@ Would you like me to explain more about any specific opportunity?`;
                 <ChartBarIcon className="h-5 w-5" />
                 <span className="hidden md:inline text-sm">Markets</span>
               </Link>
-              <Link 
-                href="/morphic-test"
-                className="p-2 rounded-lg hover:bg-gray-700 text-gray-300 flex items-center space-x-1"
-                title="Morphic Test"
-              >
-                <BeakerIcon className="h-5 w-5" />
-                <span className="hidden md:inline text-sm">Morphic</span>
-              </Link>
               <button 
                 onClick={toggleNetwork}
                 className={`px-3 py-1 rounded-lg text-sm font-mono ${
@@ -1124,15 +1108,15 @@ Would you like me to explain more about any specific opportunity?`;
         {/* Content area - this is the scrollable part */}
         <div className="flex-1 overflow-y-auto pb-24"> {/* Add padding bottom to account for fixed chat input */}
           {/* Welcome section - always visible */}
-          <div className="w-full bg-gradient-to-r from-blue-900/30 to-purple-900/30 border-b border-gray-800">
+          <div className="w-full bg-gradient-to-r from-teal-400/60 to-amber-500/60 border-b border-gray-800">
             <div className="max-w-4xl mx-auto px-4 py-6 text-center">
               <div className="flex justify-center mb-4">
-                <div className="h-16 w-16 rounded-full bg-blue-500/20 flex items-center justify-center">
-                  <SparklesIcon className="h-8 w-8 text-blue-400" />
+                <div className="h-16 w-16 rounded-full bg-teal-500/20 flex items-center justify-center">
+                  <SparklesIcon className="h-8 w-8 text-teal-400" />
                 </div>
               </div>
-              <h1 className="text-3xl font-bold text-blue-300 mb-2">Aptos DeFi AI Assistant</h1>
-              <p className="text-gray-400 max-w-md mx-auto">
+              <h1 className="text-3xl font-bold text-white mb-2">Aptos DeFi AI Assistant</h1>
+              <p className="text-gray-300 max-w-md mx-auto">
                 Your AI-powered guide to navigating the Aptos DeFi ecosystem. Ask about swaps, yields, market analysis, and more.
               </p>
             </div>

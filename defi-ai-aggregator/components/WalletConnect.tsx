@@ -3,6 +3,7 @@
 import { useWallet } from '@aptos-labs/wallet-adapter-react';
 import { useEffect, useState, useRef } from 'react';
 import { ChevronDownIcon, ArrowRightOnRectangleIcon, ClipboardDocumentIcon, CheckIcon } from '@heroicons/react/24/outline';
+import { WalletIcon } from '@heroicons/react/24/outline';
 
 interface WalletConnectProps {
   onConnect: () => void;
@@ -107,8 +108,9 @@ export default function WalletConnect({ onConnect }: WalletConnectProps) {
   return (
     <button
       onClick={handleConnect}
-      className="bg-gradient-to-r from-blue-600 to-purple-600 text-white px-4 py-2 rounded-lg hover:from-blue-500 hover:to-purple-500 transition-colors"
+      className="flex items-center gap-2 bg-gradient-to-r from-teal-500 to-amber-500 hover:from-teal-400 hover:to-amber-400 text-black font-medium py-1.5 px-3 rounded-lg transition-all duration-200"
     >
+      <WalletIcon className="w-4 h-4" />
       Connect Wallet
     </button>
   );

@@ -93,9 +93,9 @@ export default function MarketPage() {
       <div className="flex-1 container mx-auto px-4 py-6">
         <div className="space-y-6">
           {/* Welcome section */}
-          <div className="w-full bg-gradient-to-r from-blue-900/30 to-purple-900/30 border border-gray-800 rounded-xl p-6 mb-8">
+          <div className="w-full bg-gradient-to-r from-teal-700/80 to-amber-700/80 border border-gray-800 rounded-xl p-6 mb-8">
             <div className="max-w-4xl mx-auto text-center">
-              <h1 className="text-3xl font-bold text-blue-300 mb-2">Aptos Market Dashboard</h1>
+              <h1 className="text-3xl font-bold text-white mb-2">Aptos Market Dashboard</h1>
               <p className="text-gray-400 max-w-md mx-auto">
                 Real-time market data and AI-powered analysis for the Aptos ecosystem
               </p>
